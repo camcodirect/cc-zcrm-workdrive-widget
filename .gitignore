@@ -1,0 +1,11 @@
+node_modules/
+.env
+cert.pem
+key.pem
+ZET-debug.log
+*.log
+.DS_Store
+
+# local test artifacts
+.playwright-mcp/
+*.png

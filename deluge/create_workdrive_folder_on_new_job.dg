@@ -1,0 +1,192 @@
+string standalone.create_workdrive_folder_on_new_job(int recId)
+{
+	//
+	// DEV VARIABLES
+	//
+	// TEST JOB "tester" - BOTH WORKDRIVE FIELDS NULL AS OF 2026-09-09, SO IT HITS THE CREATE PATH
+	//recId = 2582206000076840730;
+
+	//
+	// CONFIGURATION - SET THIS BEFORE DEPLOYING
+	//
+	// PARENT WORKDRIVE FOLDER THAT ALL JOB FOLDERS LIVE UNDER.
+	// GET THE ID FROM THE WORKDRIVE URL: https://workdrive.zoho.com/folder/<THIS PART>
+	//
+	// CURRENTLY POINTS AT "_Widget Test Jobs" INSIDE THE "Zoho CRM" TEAM FOLDER -
+	// THE TEST CONTAINER HOLDING JOB-1001 THROUGH JOB-1006. VERIFIED WRITABLE 2026-09-09.
+	// SWAP THIS FOR THE REAL PRODUCTION JOBS CONTAINER BEFORE GOING LIVE.
+	parentFolderIdStr = "hr0wcd0b9ffb36e2e45b5bc0d4f0e93c3e3dd";
+
+	// MODULE THIS FUNCTION RUNS AGAINST. THE WIDGET ITSELF IS MODULE-AGNOSTIC,
+	// BUT A WORKFLOW IS BOUND TO ONE MODULE, SO DEPLOY ONE COPY OF THIS FUNCTION
+	// PER MODULE AND SET moduleStr TO MATCH THAT WORKFLOW'S MODULE.
+	//
+	// THE MODULE MUST CARRY A FIELD WITH THE API NAME WorkDrive_URL.
+	moduleStr = "Jobs";
+
+	// PRIMARY FIELD HOLDING THE RECORD NAME, USED TO NAME THE WORKDRIVE FOLDER.
+	// Jobs AND MOST CUSTOM MODULES USE "Name"; Deals USE "Deal_Name",
+	// Accounts "Account_Name". CHECK THE MODULE BEFORE CHANGING moduleStr.
+	nameFieldStr = "Name";
+
+	// "wd" CONNECTION VERIFIED 2026-09-09 - SERVICE zoho_workdrive, AUTHORIZED,
+	// CARRIES WorkDrive.files.ALL AND WorkDrive.files.CREATE. NOTHING TO ENABLE.
+
+	//
+	// TOP LEVEL VARIABLES
+	//
+	// respStr IS THE SINGLE RETURN VALUE - EVERY EXIT PATH SETS IT AND RETURNS IT.
+	// PREFIXES ARE MACHINE-READABLE SO A CALLER CAN BRANCH ON startsWith("SUCCESS"),
+	// startsWith("SKIPPED") OR startsWith("ERROR") WITHOUT PARSING THE WHOLE STRING.
+	respStr = "";
+	newFolderIdStr = "";
+	newFolderUrlStr = "";
+
+	//
+	// RUN CODE
+	//
+	try
+	{
+		//
+		// FETCH THE JOB RECORD
+		//
+		job = zoho.crm.getRecordById(moduleStr,recId);
+		info "THIS IS THE JOB RECORD FETCHED FROM CRM";
+		info job;
+		if(job = null || job.getJSON("id") = null)
+		{
+			respStr = "ERROR: JOB RECORD NOT FOUND FOR ID " + recId;
+			info respStr;
+			return respStr;
+		}
+		//
+		// BAIL OUT IF THE WORKDRIVE URL IS ALREADY POPULATED
+		//
+		existingUrlStr = ifnull(job.getJSON("WorkDrive_URL"),"");
+		if(existingUrlStr != "" && existingUrlStr != null)
+		{
+			respStr = "SKIPPED: WORKDRIVE URL ALREADY SET ON JOB " + recId + " - " + existingUrlStr;
+			info respStr;
+			return respStr;
+		}
+		//
+		// BUILD THE FOLDER NAME FROM THE JOB NAME
+		//
+		// "Name" CONFIRMED VIA MCP AS THE JOB'S PRIMARY FIELD (2026-09-09).
+		// READ THROUGH nameFieldStr SO ANOTHER MODULE ONLY NEEDS A CONFIG CHANGE.
+		jobNameStr = ifnull(job.getJSON(nameFieldStr),"").trim();
+		if(jobNameStr = "")
+		{
+			jobNameStr = moduleStr + " " + recId;
+		}
+		// WORKDRIVE REJECTS THESE CHARACTERS OUTRIGHT - STRIP THEM BEFORE SENDING
+		folderNameStr = jobNameStr.replaceAll("\\","-",true).replaceAll("/","-",true).replaceAll(":","-",true).replaceAll("*","-",true).replaceAll("?","-",true).replaceAll("\"","-",true).replaceAll("<","-",true).replaceAll(">","-",true).replaceAll("|","-",true).trim();
+		info "THIS IS THE FOLDER NAME TO CREATE IN WORKDRIVE";
+		info folderNameStr;
+		//
+		// CREATE THE FOLDER IN WORKDRIVE
+		//
+		// BUILT-IN TASK SIGNATURE: zoho.workdrive.createFolder(folderName, parent_id, connection)
+		// THE TASK HANDLES THE JSON:API ENVELOPE AND THE vnd.api+json HEADERS ITSELF,
+		// SO THERE IS NO 415 TRAP TO WORK AROUND HERE.
+		createFolderResp = zoho.workdrive.createFolder(folderNameStr,parentFolderIdStr,"wd");
+		info "THIS IS THE RESPONSE FROM CREATING THE WORKDRIVE FOLDER";
+		info createFolderResp;
+		if(createFolderResp = null)
+		{
+			respStr = "ERROR: NO RESPONSE FROM zoho.workdrive.createFolder FOR JOB " + recId;
+			info respStr;
+			sendmail
+			[
+				from :zoho.loginuserid
+				to :"john@camco.tech"
+				subject :"error on create_workdrive_folder_on_new_job"
+				message :"zoho.workdrive.createFolder returned nothing for Job " + recId
+			]
+			return respStr;
+		}
+		//
+		// PULL THE NEW FOLDER ID OUT OF THE RESPONSE
+		//
+		// THE TASK RETURNS THE JSON:API PAYLOAD AS A KEY-VALUE:
+		//   SUCCESS SHAPE:  {"data":[{"id":"...","attributes":{...}}]}
+		//   ERROR SHAPE:    {"errors":[{"id":"F000","title":"..."}]}
+		if(createFolderResp.getJSON("errors") != null)
+		{
+			respStr = "ERROR: WORKDRIVE REFUSED THE FOLDER CREATE FOR JOB " + recId + " - " + createFolderResp.getJSON("errors").toString();
+			info respStr;
+			sendmail
+			[
+				from :zoho.loginuserid
+				to :"john@camco.tech"
+				subject :"error on create_workdrive_folder_on_new_job"
+				message :"WorkDrive refused the folder create for Job " + recId + "<br> " + createFolderResp.toString()
+			]
+			return respStr;
+		}
+		folderDataLst = createFolderResp.getJSON("data");
+		if(folderDataLst = null)
+		{
+			// SOME BUILT-IN TASKS HAND BACK THE RESOURCE FLAT INSTEAD OF WRAPPED IN "data"
+			newFolderIdStr = ifnull(createFolderResp.getJSON("id"),"");
+		}
+		else if(folderDataLst.toString().startsWith("["))
+		{
+			// THE CREATE ENDPOINT RETURNS A LIST - OLDER RESPONSES RETURN A BARE OBJECT, SO HANDLE BOTH
+			if(folderDataLst.size() > 0)
+			{
+				newFolderIdStr = folderDataLst.get(0).getJSON("id");
+			}
+		}
+		else
+		{
+			newFolderIdStr = folderDataLst.getJSON("id");
+		}
+		if(newFolderIdStr = "" || newFolderIdStr = null)
+		{
+			respStr = "ERROR: COULD NOT READ THE NEW FOLDER ID FOR JOB " + recId + " - " + createFolderResp.toString();
+			info respStr;
+			return respStr;
+		}
+		info "THIS IS THE NEW WORKDRIVE FOLDER ID";
+		info newFolderIdStr;
+		//
+		// UPDATE THE JOB RECORD WITH THE WORKDRIVE URL
+		//
+		newFolderUrlStr = "https://workdrive.zoho.com/folder/" + newFolderIdStr;
+		updateMp = Map();
+		updateMp.put("WorkDrive_URL",newFolderUrlStr);
+		updateJob = zoho.crm.updateRecord(moduleStr,recId,updateMp);
+		info "THIS IS THE RESPONSE FROM UPDATING THE JOB RECORD";
+		info updateJob;
+		if(updateJob.getJSON("id") = null)
+		{
+			// THE ONLY PATH THAT LEAVES REAL GARBAGE BEHIND - THE FOLDER EXISTS BUT NOTHING POINTS AT IT
+			respStr = "ERROR: ORPHANED FOLDER " + newFolderIdStr + " CREATED BUT THE UPDATE FAILED ON JOB " + recId + " - " + updateJob.toString();
+			info respStr;
+			sendmail
+			[
+				from :zoho.loginuserid
+				to :"john@camco.tech"
+				subject :"error on create_workdrive_folder_on_new_job"
+				message :"Folder " + newFolderIdStr + " was created in WorkDrive but the Jobs update failed for record " + recId + ". The folder is orphaned. <br> " + updateJob.toString()
+			]
+			return respStr;
+		}
+		respStr = "SUCCESS: CREATED FOLDER " + newFolderIdStr + " AND UPDATED JOB " + recId + " - " + newFolderUrlStr;
+		info respStr;
+	}
+	catch (e)
+	{
+		respStr = "ERROR: UNCAUGHT EXCEPTION ON JOB " + recId + " - " + e;
+		info respStr;
+		sendmail
+		[
+			from :zoho.loginuserid
+			to :"john@camco.tech"
+			subject :"error on create_workdrive_folder_on_new_job"
+			message :"See error below <br> " + e
+		]
+	}
+	return respStr;
+}

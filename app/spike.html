@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorkDrive Widget Spike</title>
+  <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+  <style>
+    body { font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 16px; color: #1a1a1a; }
+    h1 { font-size: 15px; margin: 0 0 4px; }
+    .sub { color: #666; margin-bottom: 16px; }
+    fieldset { border: 1px solid #ddd; border-radius: 6px; margin: 0 0 14px; padding: 12px; }
+    legend { font-weight: 600; padding: 0 6px; }
+    label { display: block; margin: 6px 0 2px; font-size: 12px; color: #444; }
+    input[type=text] { width: 100%; max-width: 460px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font: inherit; box-sizing: border-box; }
+    button { padding: 6px 12px; margin: 8px 6px 0 0; border: 1px solid #c4c4c4; background: #f6f6f6; border-radius: 4px; cursor: pointer; font: inherit; }
+    button:hover { background: #ececec; }
+    button.primary { background: #2b7de9; border-color: #2b7de9; color: #fff; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px; overflow: auto; max-height: 300px; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: #1a7f37; font-weight: 600; }
+    .fail { color: #c0392b; font-weight: 600; }
+    .hint { font-size: 11px; color: #777; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>WorkDrive Widget — Phase 0 Spike</h1>
+  <div class="sub">Throwaway. Decides the upload transport and confirms the response envelope. Delete once <code>docs/api-findings.md</code> is written.</div>
+
+  <fieldset>
+    <legend>Context</legend>
+    <div id="ctx">Waiting for PageLoad…</div>
+    <label for="folderId">Folder ID (WorkDrive URL's last path segment)</label>
+    <input type="text" id="folderId" placeholder="e.g. kj2n4a880e2a09bcf4641b2ef7c60e81b7b2f">
+    <div class="hint">In WorkDrive, open the folder and copy the last segment of the address bar URL.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Spike B — read path (low risk, run first)</legend>
+    <button class="primary" onclick="spikeListFolder()">GET folder contents</button>
+    <button onclick="spikeFolderMeta()">GET folder metadata</button>
+    <button onclick="spikeCreateFolder()">POST create test folder</button>
+    <div class="hint">Confirms the connection, the vnd.api+json header, and the response envelope shape.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Spike A — upload transport (the riskiest unknown)</legend>
+    <label for="fileInput">Pick a small file (a few KB is plenty)</label>
+    <input type="file" id="fileInput">
+    <button class="primary" onclick="spikeUploadFormData()">A1 · FormData</button>
+    <button onclick="spikeUploadBase64()">A2 · base64 body</button>
+    <button onclick="spikeUploadMultipartString()">A3 · hand-built multipart</button>
+    <div class="hint">Stop at the first that works. If all three fail, the fallback is a Deluge CRM Function proxy.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Output</legend>
+    <button onclick="document.getElementById('out').textContent=''">Clear</button>
+    <pre id="out">Ready.</pre>
+  </fieldset>
+
+  <script>
+    const CONNECTION = "wd";
+    const BASE = "https://www.zohoapis.com/workdrive/api/v1";
+    const JSONAPI = { "Accept": "application/vnd.api+json", "Content-Type": "application/vnd.api+json" };
+
+    const out = document.getElementById("out");
+    function log(label, data) {
+      const stamp = new Date().toLocaleTimeString();
+      const body = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      out.textContent += `\n[${stamp}] ${label}\n${body}\n${"-".repeat(60)}\n`;
+      out.scrollTop = out.scrollHeight;
+      console.log(label, data);
+    }
+
+    function folderId() {
+      const v = document.getElementById("folderId").value.trim();
+      if (!v) { log("STOP", "Enter a folder ID first."); throw new Error("no folder id"); }
+      return v;
+    }
+
+    // The whole point of the spike: learn the real envelope shape.
+    // details.statusCode is WorkDrive's HTTP status; the outer code/status
+    // only say whether the CONNECTION call itself succeeded.
+    function report(name, resp) {
+      log(name + " · RAW", resp);
+      const d = resp && resp.details;
+      if (d) {
+        log(name + " · upstream status", d.statusCode);
+        let msg = d.statusMessage;
+        if (typeof msg === "string") {
+          log(name + " · statusMessage is a STRING (needs JSON.parse)", msg.slice(0, 2000));
+          try { msg = JSON.parse(msg); log(name + " · parsed", msg); }
+          catch (e) { log(name + " · parse failed", String(e)); }
+        } else {
+          log(name + " · statusMessage is an OBJECT", msg);
+        }
+      }
+    }
+
+    function invoke(name, req) {
+      log(name + " · REQUEST", req);
+      return ZOHO.CRM.CONNECTION.invoke(CONNECTION, req)
+        .then(r => report(name, r))
+        .catch(e => log(name + " · REJECTED", String(e && e.message || e)));
+    }
+
+    // ---- Spike B ----
+    function spikeListFolder() {
+      invoke("B1 list", {
+        url: `${BASE}/files/${folderId()}/files`,
+        method: "GET",
+        param_type: 1,
+        headers: JSONAPI
+      });
+    }
+
+    function spikeFolderMeta() {
+      invoke("B2 meta", {
+        url: `${BASE}/files/${folderId()}`,
+        method: "GET",
+        param_type: 1,
+        headers: JSONAPI
+      });
+    }
+
+    function spikeCreateFolder() {
+      const name = "zzz-spike-test-" + Date.now();
+      log("B3 note", "Creates a real folder named " + name + " — delete it in WorkDrive afterward.");
+      invoke("B3 create", {
+        url: `${BASE}/files`,
+        method: "POST",
+        param_type: 2,
+        headers: JSONAPI,
+        parameters: { data: { attributes: { name: name, parent_id: folderId() }, type: "files" } }
+      });
+    }
+
+    // ---- Spike A ----
+    function pickedFile() {
+      const f = document.getElementById("fileInput").files[0];
+      if (!f) { log("STOP", "Pick a file first."); throw new Error("no file"); }
+      return f;
+    }
+
+    function spikeUploadFormData() {
+      const f = pickedFile();
+      const fd = new FormData();
+      fd.append("parent_id", folderId());
+      fd.append("filename", f.name);
+      fd.append("content", f, f.name);
+      fd.append("override-name-exist", "false");
+      log("A1 note", "Passing a FormData object straight through as parameters. Likely fails: the SDK marshals to JSON via postMessage and FormData is not structured-cloneable in the way it needs.");
+      invoke("A1 FormData", {
+        url: `${BASE}/upload`,
+        method: "POST",
+        param_type: 2,
+        parameters: fd
+      });
+    }
+
+    function spikeUploadBase64() {
+      const f = pickedFile();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const b64 = String(reader.result).split(",")[1];
+        log("A2 note", `Base64 of ${f.name}, ${b64.length} chars. Testing whether WorkDrive accepts a base64 content field over a JSON body.`);
+        invoke("A2 base64", {
+          url: `${BASE}/upload`,
+          method: "POST",
+          param_type: 2,
+          parameters: {
+            parent_id: folderId(),
+            filename: f.name,
+            content: b64,
+            "override-name-exist": "false"
+          }
+        });
+      };
+      reader.readAsDataURL(f);
+    }
+
+    function spikeUploadMultipartString() {
+      const f = pickedFile();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const boundary = "----spike" + Date.now();
+        const body =
+          `--${boundary}\r\nContent-Disposition: form-data; name="parent_id"\r\n\r\n${folderId()}\r\n` +
+          `--${boundary}\r\nContent-Disposition: form-data; name="filename"\r\n\r\n${f.name}\r\n` +
+          `--${boundary}\r\nContent-Disposition: form-data; name="content"; filename="${f.name}"\r\n` +
+          `Content-Type: application/octet-stream\r\n\r\n${reader.result}\r\n` +
+          `--${boundary}--\r\n`;
+        log("A3 note", "Hand-assembled multipart as a string. Binary-unsafe for non-text files, so treat a pass here as partial.");
+        invoke("A3 multipart", {
+          url: `${BASE}/upload`,
+          method: "POST",
+          param_type: 2,
+          headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+          parameters: body
+        });
+      };
+      reader.readAsBinaryString(f);
+    }
+
+    // ---- boot ----
+    ZOHO.embeddedApp.on("PageLoad", function (data) {
+      log("PageLoad payload", data);
+      const raw = data && data.EntityId;
+      log("EntityId shape", Array.isArray(raw) ? `ARRAY -> ${raw[0]}` : `SCALAR -> ${raw}`);
+      document.getElementById("ctx").innerHTML =
+        `Entity: <b>${data && data.Entity}</b> · Record: <b>${Array.isArray(raw) ? raw[0] : raw}</b>`;
+
+      const id = Array.isArray(raw) ? raw[0] : raw;
+      if (data && data.Entity && id) {
+        ZOHO.CRM.API.getRecord({ Entity: data.Entity, RecordID: id })
+          .then(r => {
+            log("getRecord", r);
+            const rec = r && r.data && r.data[0];
+            if (rec) {
+              const val = rec.WorkDrive_URL || rec.WorkDrive_Folder_ID;
+              if (val) {
+                document.getElementById("folderId").value = String(val).split("/").pop();
+                log("prefilled folder id", document.getElementById("folderId").value);
+              } else {
+                log("note", "Neither WorkDrive_Folder_ID nor WorkDrive_URL is set on this record. Paste an ID manually.");
+              }
+            }
+          })
+          .catch(e => log("getRecord FAILED", String(e)));
+      }
+    });
+
+    ZOHO.embeddedApp.init().then(() => log("SDK", "initialized"));
+  </script>
+</body>
+</html>

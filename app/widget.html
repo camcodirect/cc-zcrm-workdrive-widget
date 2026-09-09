@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Files</title>
+  <link rel="stylesheet" href="css/widget.css">
+  <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+</head>
+<body>
+  <div id="root">
+    <div class="toolbar">
+      <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+      <a class="btn" id="btn-open-wd" href="#" target="_blank" rel="noopener" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/>
+        </svg>
+        <span>Open in WorkDrive</span>
+      </a>
+      <button class="btn" type="button" id="btn-new-folder" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 4H2v16h20V6H12l-2-2z"/><path d="M12 11v6M9 14h6"/>
+        </svg>
+        <span>New Folder</span>
+      </button>
+      <button class="btn primary" type="button" id="btn-upload" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <span>Upload</span>
+      </button>
+    </div>
+
+    <div id="banner"></div>
+    <div id="newfolder"></div>
+
+    <div class="dropzone" id="dropzone">
+      <div class="drop-overlay">Drop files to upload</div>
+      <div class="list" id="list"></div>
+    </div>
+
+    <div id="uploads"></div>
+  </div>
+
+  <input type="file" id="file-input" class="visually-hidden" multiple>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

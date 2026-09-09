@@ -1,0 +1,135 @@
+string standalone.upload_file_to_workdrive(string folderIdStr, string fileNameStr, string fileContentStr)
+{
+	//
+	// UPLOAD A FILE TO A WORKDRIVE FOLDER ON BEHALF OF THE JOB FILES WIDGET.
+	//
+	// WHY THIS EXISTS:
+	// ZOHO.CRM.CONNECTION.invoke() MARSHALS ITS PAYLOAD AS
+	// application/x-www-form-urlencoded. A BASE64 FILE OF ANY REAL SIZE (~1.6MB
+	// OBSERVED) IS REJECTED BEFORE IT EVER REACHES WORKDRIVE, AND THE FAILURE
+	// SURFACES CLIENT-SIDE AS A GENERIC REJECTION WITH NO USABLE DETAIL.
+	//
+	// zoho.workdrive.uploadFile IS A FIRST-CLASS DELUGE TASK. IT HANDLES THE
+	// MULTIPART BODY AND THE vnd.api+json HEADERS ITSELF, SO NONE OF THE 415
+	// WORKAROUNDS APPLY. SAME REASONING AS create_workdrive_folder_on_new_job.
+	//
+	// ARGUMENTS:
+	//   folderIdStr    - TARGET WORKDRIVE FOLDER ID
+	//   fileNameStr    - FILE NAME AS TYPED BY THE USER, NOT YET URL ENCODED
+	//   fileContentStr - BASE64 OF THE FILE, NO data: PREFIX
+	//
+	// RETURNS A JSON STRING SO THE WIDGET CAN BRANCH WITHOUT PARSING PROSE:
+	//   {"status":"SUCCESS","resource_id":"...","file_name":"...","permalink":"..."}
+	//   {"status":"ERROR","message":"..."}
+	//
+
+	//
+	// TOP LEVEL VARIABLES
+	//
+	connectionStr = "wd";
+	respMap = Map();
+
+	//
+	// RUN CODE
+	//
+	try
+	{
+		//
+		// VALIDATE INPUTS BEFORE SPENDING AN API CALL
+		//
+		if(folderIdStr = null || folderIdStr.trim() = "")
+		{
+			respMap.put("status","ERROR");
+			respMap.put("message","NO FOLDER ID SUPPLIED");
+			return respMap.toString();
+		}
+		if(fileNameStr = null || fileNameStr.trim() = "")
+		{
+			respMap.put("status","ERROR");
+			respMap.put("message","NO FILE NAME SUPPLIED");
+			return respMap.toString();
+		}
+		if(fileContentStr = null || fileContentStr.trim() = "")
+		{
+			respMap.put("status","ERROR");
+			respMap.put("message","NO FILE CONTENT SUPPLIED");
+			return respMap.toString();
+		}
+		//
+		// REBUILD THE BINARY FROM BASE64.
+		// base64Decode RETURNS A STRING; zoho.workdrive.uploadFile WANTS A FILE
+		// OBJECT, AND toFile IS WHAT BRIDGES THE TWO.
+		//
+		fileObj = base64Decode(fileContentStr).toFile(fileNameStr);
+		//
+		// THE DOCS ARE EXPLICIT THAT THE NAME MUST BE URL ENCODED UTF-8.
+		// SKIPPING THIS MANGLES ACCENTS AND RTL NAMES - SEE JOB-1006.
+		//
+		encodedNameStr = encodeUrl(fileNameStr);
+		//
+		// UPLOAD. FALSE = DO NOT OVERWRITE A FILE THAT ALREADY EXISTS, SO A NAME
+		// CLASH SURFACES INSTEAD OF SILENTLY REPLACING SOMEONE'S DOCUMENT.
+		//
+		uploadResp = zoho.workdrive.uploadFile(fileObj,folderIdStr,encodedNameStr,false,connectionStr);
+		info "WORKDRIVE UPLOAD RESPONSE";
+		info uploadResp;
+		//
+		// PULL THE FILE DETAILS OUT OF THE RESPONSE.
+		// THE UPLOAD ENDPOINT RETURNS data AS AN ARRAY AND RENAMES ITS KEYS:
+		// resource_id RATHER THAN id, FileName RATHER THAN name, Permalink
+		// CAPITALIZED. CONFIRMED AGAINST REAL RESPONSES 2026-09-09.
+		//
+		dataList = uploadResp.getJSON("data");
+		if(dataList = null)
+		{
+			//
+			// NO data MEANS AN ERROR BODY. SURFACE WORKDRIVE'S OWN TITLE IF PRESENT.
+			//
+			errorsList = uploadResp.getJSON("errors");
+			errMsgStr = "UPLOAD FAILED";
+			if(errorsList != null && errorsList.size() > 0)
+			{
+				errMsgStr = ifnull(errorsList.get(0).getJSON("title"),errMsgStr);
+			}
+			respMap.put("status","ERROR");
+			respMap.put("message",errMsgStr);
+			return respMap.toString();
+		}
+		//
+		// data IS AN ARRAY ON THIS ENDPOINT, BUT TOLERATE A SINGLE OBJECT TOO.
+		//
+		fileMap = null;
+		if(dataList.toString().startsWith("["))
+		{
+			if(dataList.size() > 0)
+			{
+				fileMap = dataList.get(0);
+			}
+		}
+		else
+		{
+			fileMap = dataList;
+		}
+		if(fileMap = null)
+		{
+			respMap.put("status","ERROR");
+			respMap.put("message","UPLOAD RETURNED NO FILE DETAILS");
+			return respMap.toString();
+		}
+		attrMap = ifnull(fileMap.getJSON("attributes"),fileMap);
+		respMap.put("status","SUCCESS");
+		respMap.put("resource_id",ifnull(attrMap.getJSON("resource_id"),""));
+		respMap.put("file_name",ifnull(attrMap.getJSON("FileName"),fileNameStr));
+		respMap.put("permalink",ifnull(attrMap.getJSON("Permalink"),""));
+		info "UPLOAD SUCCEEDED - " + respMap.toString();
+		return respMap.toString();
+	}
+	catch (e)
+	{
+		info "UPLOAD THREW - " + e.toString();
+		respMap.put("status","ERROR");
+		respMap.put("message",e.toString());
+		return respMap.toString();
+	}
+	return respMap.toString();
+}

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"C:/Users/john/cli-tools/sftp-deploy/bin/sftp-deploy.js\" --dry-run)",
+      "Bash(curl -sS -o /dev/null -w \"spike.html  -> %{http_code}  \\(%{content_type}\\)\\\\n\" \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/spike.html\")",
+      "Bash(curl -sS -o /dev/null -w \"widget.html -> %{http_code}  \\(%{content_type}\\)\\\\n\" \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/widget.html\")",
+      "Bash(curl -sSI \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/spike.html\")",
+      "Bash(node --test tests/)",
+      "mcp__claude_ai_CC-Workdrive__ZohoWorkdrive_Upload_File",
+      "Bash(grep -Ei \"\\\\.env$|cert\\\\.pem|key\\\\.pem|node_modules\")"
+    ]
+  }
+}
