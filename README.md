@@ -11,6 +11,7 @@ Built for the **Jobs** module at Camco, but the code is module-agnostic: it work
 - [What it does](#what-it-does)
   - [Delete means trash, deliberately](#delete-means-trash-deliberately)
 - [How it works](#how-it-works)
+  - [The load sequence](#the-load-sequence)
 - [Prerequisites](#prerequisites)
 - [Setup part 1: the CRM connection](#setup-part-1-the-crm-connection)
 - [Setup part 2: the CRM field](#setup-part-2-the-crm-field)
@@ -68,32 +69,74 @@ Renaming, moving, sharing, and previewing are all absent. WorkDrive already does
 
 ## How it works
 
-```
-CRM record page
-      │
-      │  ZOHO.embeddedApp PageLoad → { Entity, EntityId }
-      ▼
-  widget.html  (static files, no build step)
-      │
-      ├── ZOHO.CRM.API.getRecord ──────────► reads WorkDrive_URL off the record
-      │                                      and parses the folder ID off the end
-      │
-      ├── ZOHO.CRM.CONNECTION.invoke ─────► WorkDrive REST API, via the "wd"
-      │   (list, create folder, trash)      connection
-      │
-      └── ZOHO.CRM.FUNCTIONS.execute ─────► Deluge function → zoho.workdrive.uploadFile
-          (upload only)                      (uploads cannot go through invoke —
-                                              see Known issues)
+```mermaid
+flowchart TB
+    REC["<b>CRM record page</b><br/>WorkDrive_URL field"]
+    MAIN["<b>widget.html</b> → main.js<br/><i>static files, no build step</i>"]
+    CRMAPI["api/crm.js<br/><i>parses the folder ID</i>"]
+
+    REC == "PageLoad { Entity, EntityId }" ==> MAIN
+    MAIN --> CRMAPI
+    CRMAPI -- "ZOHO.CRM.API.getRecord" --> REC
+
+    MAIN --> WD["api/workdrive.js"]
+
+    WD -- "CONNECTION.invoke" --> CONN["Connection <b>wd</b><br/><i>list · create folder · trash</i>"]
+    WD -- "FUNCTIONS.execute" --> FN["Deluge function<br/><i>uploads only, base64</i>"]
+    WD -.- SHARED["api/_shared.js<br/><i>unwrap(): two status codes</i>"]
+
+    CONN ==> WDAPI["<b>WorkDrive REST API</b><br/>zohoapis.com/workdrive/api/v1"]
+    FN ==> WDAPI
+
+    classDef alt fill:#fff4e5,stroke:#d9822b,stroke-width:2px,color:#663c00
+    classDef ext fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b
+    classDef note fill:#f8fafc,stroke:#94a3b8,color:#334155
+    class FN alt
+    class WDAPI,CONN ext
+    class SHARED note
 ```
 
-The flow on load:
+Reads, folder creation, and trashing go through the `wd` connection straight from the browser. **Uploads take a different path** through a Deluge function, because the connection layer cannot carry a file payload. That is the single most important thing to know when setting this up, and it is why [step 5](#setup-part-5-the-upload-function-required) is not optional.
+
+### The load sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CRM as CRM record page
+    participant W as widget.html
+    participant C as api/crm.js
+    participant D as api/workdrive.js
+    participant WD as WorkDrive API
+
+    CRM->>W: PageLoad { Entity, EntityId }
+    W->>C: getRecordFolder(entity, recordId)
+    C->>CRM: ZOHO.CRM.API.getRecord
+    CRM-->>C: record
+    C-->>W: folderId (parsed off WorkDrive_URL)
+
+    alt no folder ID on the record
+        W->>W: renderNoFolder()
+    else folder ID present
+        W->>D: listFolder(folderId)
+        loop until a page returns fewer than 50
+            D->>WD: GET /files/{id}/files?page[offset]=…&sort=name
+            WD-->>D: up to 50 resources (no truncation signal)
+        end
+        D-->>W: normalized items + complete flag
+        W->>W: renderList()
+        opt listing incomplete
+            W->>W: banner: listing is partial
+        end
+    end
+```
+
+The steps in words:
 
 1. CRM fires `PageLoad` with the module (`Entity`) and record ID (`EntityId`).
 2. The widget reads that record and pulls `WorkDrive_URL` off it.
 3. It parses the folder ID from the end of that URL. A bare ID in the field also works.
-4. It lists the folder through the `wd` connection and renders the result.
-
-Reads, folder creation, and trashing go through the CRM connection directly from the browser. **Uploads take a different path** through a Deluge function, because the connection layer cannot carry a file payload. That is the single most important thing to know when setting this up, and it is why [step 5](#setup-part-5-the-upload-function-required) is not optional.
+4. It lists the folder through the `wd` connection, paging until a page comes back short, and renders the result.
 
 ### Design notes worth knowing before you change anything
 
