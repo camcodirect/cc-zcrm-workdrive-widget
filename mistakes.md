@@ -64,6 +64,18 @@ Traps hit (or deliberately avoided) on this project. Each entry: what went wrong
 
 ---
 
+## `hidden` did nothing because a class rule set `display`
+
+**What went wrong:** The Delete and Download buttons showed in the toolbar with nothing selected. `el.hidden` was `true` the whole time, so every JS-side check passed and the logic looked correct. In the browser, `getComputedStyle(btn).display` was `flex` and the buttons were 97px and 77px wide — genuinely visible.
+
+The cause was `.btn { display: inline-flex }`. The browser's default `[hidden] { display: none }` is a bare-element rule with almost no specificity, so **any** class rule that sets `display` silently beats it. The attribute was being applied and then overruled.
+
+**Why it took two passes to find:** the first investigation checked `el.hidden` in the DOM, saw `true`, and concluded the screenshots were a Playwright rendering artifact. `hidden` being true is not evidence the element is invisible — it only means the attribute is set. Reading `getComputedStyle().display` and `getBoundingClientRect().width` is what actually settles it, and that check found the bug immediately.
+
+**Rule going forward:** `[hidden] { display: none !important; }` is now declared near the top of `widget.css`, and any component that sets `display` must not remove it. When something looks visible but the code says it's hidden, check the *computed* style and the element's box, not the attribute. Trusting the attribute is what let this survive a round of "fixes" to perfectly healthy JS.
+
+---
+
 ## Listing silently truncates at 50 items
 
 **What went wrong:** `GET /files/{id}/files` returns at most 50 items and gives **no indication that it truncated**. No `meta` block, no `has_next`, no cursor, no total count. A 52-file folder returns a bare array of 50 that is byte-for-byte indistinguishable from a complete listing of a 50-file folder.
