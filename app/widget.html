@@ -11,6 +11,21 @@
   <div id="root">
     <div class="toolbar">
       <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+      <div class="search" id="search-wrap">
+        <button class="btn icon-only" type="button" id="btn-search" title="Search files" aria-label="Search files" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+          </svg>
+        </button>
+        <input type="search" id="search-input" class="search-input" placeholder="Search this folder…"
+               autocomplete="off" spellcheck="false" hidden>
+      </div>
+      <button class="btn" type="button" id="btn-download" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <span id="btn-download-label">Download</span>
+      </button>
       <button class="btn danger" type="button" id="btn-delete" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
@@ -39,6 +54,20 @@
 
     <div id="banner"></div>
     <div id="newfolder"></div>
+
+    <div class="listhead" id="listhead" hidden>
+      <span class="row-check" aria-hidden="true"></span>
+      <button class="sortcol sortcol-name" type="button" data-sort="name">
+        Name <span class="sortarrow" aria-hidden="true"></span>
+      </button>
+      <button class="sortcol row-meta row-size" type="button" data-sort="size">
+        Size <span class="sortarrow" aria-hidden="true"></span>
+      </button>
+      <button class="sortcol row-meta row-date" type="button" data-sort="modified">
+        Modified <span class="sortarrow" aria-hidden="true"></span>
+      </button>
+      <span class="row-dl-spacer" aria-hidden="true"></span>
+    </div>
 
     <div class="dropzone" id="dropzone">
       <div class="drop-overlay">Drop files to upload</div>

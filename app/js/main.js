@@ -9,7 +9,7 @@
 
 import { DEFAULT_MODULE, wdFolderUrl } from "./config.js";
 import { getRecordFolder, normalizeEntityId } from "./api/crm.js";
-import { listFolder, createFolder, uploadFile, trashItems } from "./api/workdrive.js";
+import { listFolder, createFolder, uploadFile, trashItems, downloadUrlFor } from "./api/workdrive.js";
 import { friendlyMessage } from "./api/_shared.js";
 import * as render from "./ui/render.js";
 import { initDropzone, initFilePicker } from "./ui/dropzone.js";
@@ -20,8 +20,11 @@ const state = {
   rootUrl: null, // the URL stored on the record, for "Open in WorkDrive"
   trail: [], // [{ id, name }] — root first, current folder last
   busy: false,
-  items: [], // what's currently listed, so selection can resolve id -> name
+  items: [], // everything in the current folder, as fetched
   selected: new Set(), // ids ticked in the current folder
+  sortKey: "name", // name | size | modified
+  sortDir: "asc",
+  query: "", // search text; filters the current folder only
 };
 
 const currentFolder = () => state.trail[state.trail.length - 1] || null;
@@ -31,7 +34,12 @@ function cacheElements() {
   el.btnOpenWd = document.getElementById("btn-open-wd");
   el.btnDelete = document.getElementById("btn-delete");
   el.btnDeleteLabel = document.getElementById("btn-delete-label");
+  el.btnDownload = document.getElementById("btn-download");
+  el.btnDownloadLabel = document.getElementById("btn-download-label");
   el.modal = document.getElementById("modal");
+  el.listhead = document.getElementById("listhead");
+  el.btnSearch = document.getElementById("btn-search");
+  el.searchInput = document.getElementById("search-input");
   el.list = document.getElementById("list");
   el.banner = document.getElementById("banner");
   el.uploads = document.getElementById("uploads");
@@ -47,12 +55,18 @@ function setBusy(busy) {
   el.btnNewFolder.disabled = busy;
   el.btnUpload.disabled = busy;
   el.btnDelete.disabled = busy;
+  el.btnDownload.disabled = busy;
 }
 
 function showActions(visible) {
   el.btnNewFolder.hidden = !visible;
   el.btnUpload.hidden = !visible;
   el.btnOpenWd.hidden = !visible;
+  el.btnSearch.hidden = !visible;
+  if (!visible) {
+    el.searchInput.hidden = true;
+    el.listhead.hidden = true;
+  }
   // Delete is never shown by this function. Its visibility is owned solely by
   // updateSelectionUi(), which derives it from the selection — so call that
   // rather than setting `hidden` here, and the two can never disagree.
@@ -73,15 +87,120 @@ function updateOpenLink() {
 }
 
 // ---------------------------------------------------------------------------
+// Sorting and search
+//
+// Both operate on what's already loaded, in memory. The folder is fully paged
+// in before rendering, so filtering client-side is honest — it can't hide
+// matches that live on an unfetched page.
+// ---------------------------------------------------------------------------
+
+/** Items after the search filter, in the current sort order. */
+function visibleItems() {
+  const q = state.query.trim().toLowerCase();
+  const filtered = q
+    ? state.items.filter((it) => it.name.toLowerCase().includes(q))
+    : state.items.slice();
+
+  const dir = state.sortDir === "desc" ? -1 : 1;
+
+  return filtered.sort((a, b) => {
+    // Folders always lead, whatever the sort — they're containers, not peers,
+    // and mixing them into a size sort just makes the list harder to scan.
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+
+    let cmp = 0;
+    if (state.sortKey === "size") cmp = (a.size || 0) - (b.size || 0);
+    else if (state.sortKey === "modified") cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0);
+    else cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+
+    // Fall back to name so equal values (folders have no size) stay stable.
+    if (cmp === 0 && state.sortKey !== "name") {
+      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+      return cmp; // secondary sort is always ascending
+    }
+    return cmp * dir;
+  });
+}
+
+/** Re-render the list from state, without refetching. */
+function renderCurrent() {
+  const items = visibleItems();
+  render.renderList(el.list, items, {
+    emptyBecauseFiltered: state.items.length > 0 && items.length === 0,
+    query: state.query,
+  });
+  render.markSort(el.listhead, state.sortKey, state.sortDir);
+  el.listhead.hidden = state.items.length === 0;
+
+  // A tick can survive a filter that hides its row; drop those so the toolbar
+  // count never claims more than is visible.
+  let changed = false;
+  for (const id of [...state.selected]) {
+    if (!items.some((it) => it.id === id)) {
+      state.selected.delete(id);
+      changed = true;
+    }
+  }
+  restoreChecks();
+  if (changed) updateSelectionUi();
+}
+
+/** Re-tick boxes after a re-render, since renderList rebuilds the DOM. */
+function restoreChecks() {
+  if (!state.selected.size) return;
+  for (const box of el.list.querySelectorAll("[data-select]")) {
+    if (state.selected.has(box.dataset.select)) {
+      box.checked = true;
+      box.closest(".row").classList.add("selected");
+    }
+  }
+}
+
+function onSort(key) {
+  if (state.sortKey === key) {
+    state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+  } else {
+    state.sortKey = key;
+    // Dates and sizes are most useful largest/newest first; names A-Z.
+    state.sortDir = key === "name" ? "asc" : "desc";
+  }
+  renderCurrent();
+}
+
+function toggleSearch(show) {
+  el.searchInput.hidden = !show;
+  el.btnSearch.classList.toggle("active", show);
+  if (show) {
+    el.searchInput.focus();
+  } else if (state.query) {
+    state.query = "";
+    el.searchInput.value = "";
+    renderCurrent();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
 
-/** The Delete button only exists while something is ticked. */
+/** Delete and Download only exist while something is ticked. */
 function updateSelectionUi() {
   const n = state.selected.size;
   el.btnDelete.hidden = n === 0;
   el.btnDeleteLabel.textContent = n > 1 ? `Delete (${n})` : "Delete";
   el.btnDelete.disabled = state.busy;
+
+  // Folders can't be downloaded directly, so the button counts only files and
+  // hides when a selection is folders-only.
+  const files = selectedFiles();
+  el.btnDownload.hidden = files.length === 0;
+  el.btnDownloadLabel.textContent = files.length > 1 ? `Download (${files.length})` : "Download";
+  el.btnDownload.disabled = state.busy;
+}
+
+/** Ticked items that are actually downloadable files. */
+function selectedFiles() {
+  return state.items.filter((it) => state.selected.has(it.id) && !it.isFolder);
 }
 
 function clearSelection() {
@@ -96,6 +215,53 @@ function onSelectToggle(checkbox) {
   checkbox.closest(".row").classList.toggle("selected", checkbox.checked);
   updateSelectionUi();
 }
+
+// ---------------------------------------------------------------------------
+// Download
+// ---------------------------------------------------------------------------
+
+/**
+ * Download every ticked file.
+ *
+ * Each file is its own hidden <a download> click. Browsers rate-limit rapid
+ * programmatic downloads and some will silently drop all but the first, so
+ * they're spaced out — slower, but every file actually arrives.
+ *
+ * No zip: WorkDrive's zip endpoint is asynchronous (it returns a job key you
+ * then poll), which is a lot of moving parts for something the browser can do
+ * directly. Revisit if people routinely grab dozens at once.
+ */
+async function onDownload() {
+  const files = selectedFiles();
+  if (!files.length || state.busy) return;
+
+  // Chrome asks permission for multi-file downloads; warn so a blocked prompt
+  // isn't mistaken for a broken button.
+  if (files.length > 1) {
+    render.renderBanner(
+      el.banner,
+      `Downloading ${files.length} files. Your browser may ask permission to download multiple files.`,
+      "info"
+    );
+  }
+
+  for (const [i, file] of files.entries()) {
+    triggerDownload(file);
+    if (i < files.length - 1) await sleep(400);
+  }
+}
+
+function triggerDownload(file) {
+  const a = document.createElement("a");
+  a.href = file.downloadUrl || downloadUrlFor(file.id);
+  a.download = file.name; // hint only; cross-origin the server's name wins
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // Delete (trash)
@@ -138,9 +304,13 @@ async function openFolder(folderId, name, { push = true } = {}) {
   render.renderCrumbs(el.crumbs, state.trail);
   updateOpenLink();
   render.clear(el.banner); // don't carry a stale warning into a new folder
-  // Ticks refer to items in the folder being left, so they must not survive.
+  // Ticks and the search term refer to the folder being left, so neither
+  // survives the move. Sort order does — it's a preference, not folder state.
   state.items = [];
+  state.query = "";
+  el.searchInput.value = "";
   clearSelection();
+  el.listhead.hidden = true;
   render.renderLoading(el.list);
   setBusy(true);
 
@@ -164,7 +334,7 @@ async function openFolder(folderId, name, { push = true } = {}) {
   }
 
   state.items = res.items;
-  render.renderList(el.list, res.items);
+  renderCurrent();
 
   // Never show a partial listing as if it were complete — that's the whole
   // point of paginating. Say so, and offer the full folder in WorkDrive.
@@ -349,8 +519,9 @@ function wireEvents() {
   });
 
   el.list.addEventListener("click", (e) => {
-    // The checkbox and its label handle themselves; only the name area opens.
-    if (e.target.closest(".row-check")) return;
+    // The checkbox and the download link handle themselves; only the name
+    // area opens the item.
+    if (e.target.closest(".row-check") || e.target.closest(".row-dl")) return;
     const opener = e.target.closest(".row-open");
     if (!opener) return;
     const row = opener.closest(".row");
@@ -367,6 +538,28 @@ function wireEvents() {
   });
 
   el.btnDelete.addEventListener("click", onDelete);
+  el.btnDownload.addEventListener("click", onDownload);
+
+  el.listhead.addEventListener("click", (e) => {
+    const col = e.target.closest("[data-sort]");
+    if (col) onSort(col.dataset.sort);
+  });
+
+  el.btnSearch.addEventListener("click", () => toggleSearch(el.searchInput.hidden));
+
+  el.searchInput.addEventListener("input", () => {
+    state.query = el.searchInput.value;
+    renderCurrent();
+  });
+
+  el.searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") toggleSearch(false);
+  });
+
+  // Collapse an empty search box on blur so the toolbar returns to normal.
+  el.searchInput.addEventListener("blur", () => {
+    if (!el.searchInput.value.trim()) toggleSearch(false);
+  });
 
   el.crumbs.addEventListener("click", (e) => {
     const crumb = e.target.closest(".crumb");

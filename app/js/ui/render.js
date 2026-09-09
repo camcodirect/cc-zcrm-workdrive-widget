@@ -4,6 +4,7 @@
  */
 
 import { wdFolderUrl, wdFileUrl, FIELD } from "../config.js";
+import { downloadUrlFor } from "../api/workdrive.js";
 
 const ICONS = {
   folder: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H2v16h20V6H12l-2-2z"/></svg>',
@@ -13,7 +14,21 @@ const ICONS = {
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>',
   upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg>',
   newFolder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4H2v16h20V6H12l-2-2z"/><path d="M12 11v6M9 14h6"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
 };
+
+/** Mark which column is sorted, and which way. */
+export function markSort(head, key, dir) {
+  if (!head) return;
+  for (const btn of head.querySelectorAll("[data-sort]")) {
+    const active = btn.dataset.sort === key;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-sort", active ? (dir === "asc" ? "ascending" : "descending") : "none");
+    const arrow = btn.querySelector(".sortarrow");
+    if (arrow) arrow.textContent = active ? (dir === "asc" ? "▲" : "▼") : "";
+  }
+}
 
 export function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -226,9 +241,19 @@ function openLink(idOrUrl, label) {
 }
 
 /** The list body: the rows themselves. */
-export function renderList(container, items) {
+export function renderList(container, items, opts = {}) {
   if (!items.length) {
-    container.innerHTML = `
+    // "No matches" and "empty folder" are different situations and must not
+    // share a message — telling someone to drag files in when they've simply
+    // mistyped a search is actively unhelpful.
+    container.innerHTML = opts.emptyBecauseFiltered
+      ? `
+      <div class="state">
+        <div class="state-icon">${ICONS.search}</div>
+        <div class="state-title">No matches</div>
+        <div class="state-detail">Nothing here matches “${esc(opts.query || "")}”.</div>
+      </div>`
+      : `
       <div class="state">
         <div class="state-icon">${ICONS.empty}</div>
         <div class="state-title">This folder is empty</div>
@@ -253,6 +278,16 @@ export function renderList(container, items) {
         </span>
         <span class="row-meta row-size">${it.isFolder ? "" : esc(formatSize(it.size))}</span>
         <span class="row-meta row-date">${esc(formatDate(it.modified))}</span>
+        ${
+          // Folders have no direct download — WorkDrive would have to zip them
+          // first — so they get a spacer that keeps the columns aligned.
+          it.isFolder
+            ? '<span class="row-dl-spacer" aria-hidden="true"></span>'
+            : `<a class="row-dl" title="Download ${esc(it.name)}"
+                  aria-label="Download ${esc(it.name)}"
+                  href="${esc(it.downloadUrl || downloadUrlFor(it.id))}"
+                  download>${ICONS.download}</a>`
+        }
       </div>`
     )
     .join("");
@@ -317,9 +352,9 @@ export function renderCrumbs(container, trail) {
     .join("");
 }
 
-export function renderBanner(container, message) {
+export function renderBanner(container, message, variant) {
   container.innerHTML = `
-    <div class="banner">
+    <div class="banner ${variant === "info" ? "info" : ""}">
       <span>${esc(message)}</span>
       <button type="button" data-dismiss aria-label="Dismiss">&times;</button>
     </div>`;

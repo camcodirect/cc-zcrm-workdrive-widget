@@ -106,6 +106,43 @@ test("unwrap: never emits NaN in a user-facing message", () => {
   }
 });
 
+/**
+ * Captured live 2026-09-09 from a delete that WorkDrive refused.
+ *
+ * The envelope carries NO statusCode at all — `status: "true"` is the
+ * connection layer reporting on itself, not an upstream HTTP status. Without
+ * special handling this falls through to UNKNOWN and the banner shows the bare
+ * string "Unauthorized access", which sent a debugging session after the
+ * connection when the real cause was folder permissions.
+ *
+ * R008 is ambiguous by WorkDrive's own design: it means "doesn't exist" OR
+ * "you may not write here", reported identically. See docs/api-findings.md.
+ */
+test("unwrap: R008 with no statusCode classifies as DENIED, not UNKNOWN", () => {
+  const r = unwrap({
+    code: "SUCCESS",
+    message: "Connection invoked successfully",
+    status: "success",
+    details: {
+      statusMessage: { errors: [{ id: "R008", title: "Unauthorized access" }] },
+      status: "true",
+    },
+  });
+
+  assert.equal(r.ok, false, "an errors payload is never a success");
+  assert.equal(r.reason, "DENIED", "R008 must classify as DENIED so the UI can explain it");
+  assert.ok(
+    /permission|access/i.test(r.message),
+    `message should point at permissions, got: ${r.message}`,
+  );
+  assert.ok(!Number.isNaN(r.status), "status must never be NaN");
+});
+
+test("unwrap: an errors array with no status is a failure, not a success", () => {
+  const r = unwrap({ details: { statusMessage: { errors: [{ id: "F000", title: "Nope" }] } } });
+  assert.equal(r.ok, false);
+});
+
 test("unwrap: finds the status under alternate key names", () => {
   assert.equal(unwrap({ details: { status_code: 200, statusMessage: "{}" } }).ok, true);
   assert.equal(unwrap({ details: { statuscode: 200, statusMessage: "{}" } }).ok, true);
@@ -297,6 +334,96 @@ test("iconKind: unknown and extensionless fall back to generic", () => {
 test("iconKind: case insensitive", () => {
   assert.equal(iconKind("SCAN.JPEG", false), "image");
   assert.equal(iconKind("Report.PDF", false), "pdf");
+});
+
+// ---------------------------------------------------------------------------
+// Sorting and filtering. Mirrors visibleItems() in main.js, which can't be
+// imported here because it reads module-level state.
+// ---------------------------------------------------------------------------
+
+function sortAndFilter(items, { sortKey = "name", sortDir = "asc", query = "" } = {}) {
+  const q = query.trim().toLowerCase();
+  const filtered = q ? items.filter((it) => it.name.toLowerCase().includes(q)) : items.slice();
+  const dir = sortDir === "desc" ? -1 : 1;
+  return filtered.sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    let cmp = 0;
+    if (sortKey === "size") cmp = (a.size || 0) - (b.size || 0);
+    else if (sortKey === "modified") cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0);
+    else cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+    if (cmp === 0 && sortKey !== "name") {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+    }
+    return cmp * dir;
+  });
+}
+
+const SAMPLE = [
+  { id: "1", name: "Zebra.pdf", isFolder: false, size: 500, modified: 300 },
+  { id: "2", name: "apple.txt", isFolder: false, size: 100, modified: 100 },
+  { id: "3", name: "Site Photos", isFolder: true, size: 0, modified: 200 },
+  { id: "4", name: "mango.csv", isFolder: false, size: 900, modified: 200 },
+];
+
+test("sort: folders always lead, whatever the key", () => {
+  for (const key of ["name", "size", "modified"]) {
+    for (const dir of ["asc", "desc"]) {
+      const first = sortAndFilter(SAMPLE, { sortKey: key, sortDir: dir })[0];
+      assert.equal(first.isFolder, true, `folder must lead for ${key}/${dir}`);
+    }
+  }
+});
+
+test("sort by name is case-insensitive", () => {
+  const names = sortAndFilter(SAMPLE, { sortKey: "name" }).map((i) => i.name);
+  assert.deepEqual(names, ["Site Photos", "apple.txt", "mango.csv", "Zebra.pdf"]);
+});
+
+test("sort by name descending reverses the files", () => {
+  const names = sortAndFilter(SAMPLE, { sortKey: "name", sortDir: "desc" }).map((i) => i.name);
+  assert.deepEqual(names, ["Site Photos", "Zebra.pdf", "mango.csv", "apple.txt"]);
+});
+
+test("sort by size, largest first", () => {
+  const names = sortAndFilter(SAMPLE, { sortKey: "size", sortDir: "desc" }).map((i) => i.name);
+  assert.deepEqual(names, ["Site Photos", "mango.csv", "Zebra.pdf", "apple.txt"]);
+});
+
+test("sort by modified, newest first", () => {
+  const names = sortAndFilter(SAMPLE, { sortKey: "modified", sortDir: "desc" }).map((i) => i.name);
+  assert.deepEqual(names, ["Site Photos", "Zebra.pdf", "mango.csv", "apple.txt"]);
+});
+
+test("sort: ties fall back to name so order is stable", () => {
+  // mango and Site Photos share modified=200; the file's position must be
+  // deterministic rather than depending on input order.
+  const a = sortAndFilter(SAMPLE, { sortKey: "modified", sortDir: "asc" }).map((i) => i.name);
+  const b = sortAndFilter([...SAMPLE].reverse(), { sortKey: "modified", sortDir: "asc" }).map((i) => i.name);
+  assert.deepEqual(a, b);
+});
+
+test("sort: numeric names order naturally, not lexically", () => {
+  const docs = [
+    { id: "a", name: "doc-2.txt", isFolder: false, size: 1, modified: 1 },
+    { id: "b", name: "doc-10.txt", isFolder: false, size: 1, modified: 1 },
+    { id: "c", name: "doc-1.txt", isFolder: false, size: 1, modified: 1 },
+  ];
+  const names = sortAndFilter(docs, { sortKey: "name" }).map((i) => i.name);
+  assert.deepEqual(names, ["doc-1.txt", "doc-2.txt", "doc-10.txt"]);
+});
+
+test("search: case-insensitive substring match", () => {
+  assert.deepEqual(sortAndFilter(SAMPLE, { query: "APP" }).map((i) => i.name), ["apple.txt"]);
+  assert.deepEqual(sortAndFilter(SAMPLE, { query: ".csv" }).map((i) => i.name), ["mango.csv"]);
+});
+
+test("search: matches folders too", () => {
+  assert.deepEqual(sortAndFilter(SAMPLE, { query: "photos" }).map((i) => i.name), ["Site Photos"]);
+});
+
+test("search: no matches returns empty, blank query returns everything", () => {
+  assert.equal(sortAndFilter(SAMPLE, { query: "zzzz" }).length, 0);
+  assert.equal(sortAndFilter(SAMPLE, { query: "   " }).length, SAMPLE.length);
 });
 
 test("formatSize", () => {

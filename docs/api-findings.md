@@ -112,7 +112,7 @@ The built-in task handles the JSON:API envelope and the `vnd.api+json` headers i
 
 Confirmed run: Job `2582206000076840730` ("tester") → folder `lxazfd287fd97630a40e78c974aaa4a59377b`, `WorkDrive_URL` written at 17:09:45.
 
-### `R008 Unauthorized access` usually means a bad parent ID, not a permissions problem
+### `R008 Unauthorized access` is ambiguous by design — check the ID first, then permissions
 
 Cost a debugging cycle, so it's worth writing down. A create against a **non-existent or unresolvable `parent_id`** comes back as:
 
@@ -128,6 +128,34 @@ Diagnostic order when this appears:
 1. **Check the parent folder ID first.** Cheapest to rule out, and the most likely cause.
 2. **Check the round-trip time.** ~20ms means it was rejected before any real work. A genuine permissions failure against a real folder takes longer.
 3. **Only then suspect the connection.** For the record, `wd` was verified 2026-09-09: service `zoho_workdrive`, authorized, carrying `WorkDrive.files.ALL` and `WorkDrive.files.CREATE`. Note that `authentication.status: true` only means a token exists, not that it works.
+
+#### The same code on a PATCH, where the ID was definitely valid
+
+Captured live 2026-09-09 from the widget's Delete button. Same `R008`, different cause — which is why the heading above no longer says "usually a bad ID".
+
+Request (decoded from the form-urlencoded body CRM actually sent):
+
+```
+url=https://www.zohoapis.com/workdrive/api/v1/files
+method=PATCH
+param_type=2
+parameters={"data":[{"attributes":{"status":"61"},"id":"lxazf67d8ed91e494434ca7a516ccc5bf021a","type":"files"}]}
+headers={"Accept":"application/vnd.api+json","Content-Type":"application/vnd.api+json"}
+```
+
+Response:
+
+```json
+{"code":"SUCCESS","details":{"statusMessage":{"errors":[{"id":"R008","title":"Unauthorized access"}]},"status":"true"},"message":"Connection invoked successfully","status":"success"}
+```
+
+Three things this pins down:
+
+- **The nested array survives the form-urlencoding intact.** `parameters` arrives as a JSON string with the `data` array whole. Whatever broke base64 uploads, it is not generic payload mangling — that hypothesis is dead for PATCH.
+- **There is no `statusCode` anywhere in the envelope.** `"status":"true"` is the connection layer reporting on *itself*. `findStatus()` correctly returns null, which used to drop the result into `UNKNOWN` and surface the bare string "Unauthorized access" in the UI. `classifyErrorCode()` now maps `R008` → `DENIED` so the banner can explain it.
+- **The resource ID was valid.** It came from a listing that had just rendered the file on screen. GET and POST both succeed against the same folder with the same connection; only the write is refused.
+
+Which leaves folder permissions on the account that authorized `wd`. Every call runs as that account, never as the CRM user clicking the button, so read-only access there fails deletes while listing keeps working perfectly.
 
 ### Still open
 

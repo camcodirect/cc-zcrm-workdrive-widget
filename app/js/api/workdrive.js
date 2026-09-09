@@ -41,7 +41,22 @@ export function toItem(resource) {
     size: Number(a.storage_info && a.storage_info.size_in_bytes) || Number(a.size_in_bytes) || 0,
     modified: a.modified_time_in_millisecond || a.modified_time || null,
     permalink: a.permalink || a.Permalink || null,
+    // The list response hands us a ready-made download URL:
+    //   https://download-accl.zoho.com/v1/workdrive/download/<id>
+    // Using it as a plain link is the whole download feature. The browser is
+    // already authenticated to Zoho, so the file streams straight from
+    // WorkDrive — no API call, and critically no binary through
+    // CONNECTION.invoke, which cannot carry one (see the upload saga).
+    downloadUrl: a.download_url || null,
   };
+}
+
+/**
+ * Fallback download URL when the list response didn't include one.
+ * Same host and shape as the `download_url` WorkDrive returns.
+ */
+export function downloadUrlFor(id) {
+  return `https://download-accl.zoho.com/v1/workdrive/download/${encodeURIComponent(id)}`;
 }
 
 /**

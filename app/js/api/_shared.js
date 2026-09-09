@@ -114,12 +114,13 @@ export function unwrap(resp) {
     if (looksSuccessful(body)) {
       return { ok: true, status: 200, body, raw: resp, reason: null, message: null };
     }
+    const code = errorCode(body);
     return {
       ok: false,
       status: 0,
       body,
       raw: resp,
-      reason: "UNKNOWN",
+      reason: classifyErrorCode(code) || "UNKNOWN",
       message: errorText(body) || "WorkDrive returned an unrecognized response.",
     };
   }
@@ -144,6 +145,29 @@ function classify(status) {
   return "UNKNOWN";
 }
 
+/** The JSON:API error id, e.g. "R008". */
+function errorCode(body) {
+  if (!body || !Array.isArray(body.errors) || !body.errors.length) return null;
+  const id = body.errors[0].id;
+  return id ? String(id).toUpperCase() : null;
+}
+
+/**
+ * Map a WorkDrive error id to a reason, for the responses that arrive with no
+ * HTTP status at all.
+ *
+ * R008 is the one that matters. WorkDrive returns it for BOTH "this resource
+ * doesn't exist" and "you may not write here", with identical text and no
+ * status code — see docs/api-findings.md. DENIED is the right call because the
+ * ambiguity is itself worth surfacing: the friendly message names both causes
+ * rather than asserting one.
+ */
+function classifyErrorCode(code) {
+  if (!code) return null;
+  if (code === "R008") return "DENIED";
+  return null;
+}
+
 /** WorkDrive returns JSON:API errors: { errors: [ { id, title } ] }. */
 function errorText(body) {
   if (!body) return null;
@@ -166,7 +190,12 @@ export function friendlyMessage(reason, fallback) {
         ? `WorkDrive call failed: ${fallback}`
         : "The WorkDrive call didn't go through. See the browser console for details.";
     case "DENIED":
-      return "You don't have permission to view this folder in WorkDrive.";
+      // Covers reads AND writes, so it can't say "view". WorkDrive reports a
+      // missing resource and a forbidden one identically (R008), so name both
+      // possibilities instead of asserting the wrong one. The account that
+      // authorized the connection is what matters here, not the CRM user
+      // clicking — that distinction is the usual cause and the least obvious.
+      return "WorkDrive turned that down. The account connected to CRM may not have permission for this folder, or the item may no longer exist.";
     case "NOT_FOUND":
       return "That WorkDrive folder no longer exists, or the ID is wrong.";
     case "CONFLICT":

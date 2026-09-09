@@ -11,7 +11,12 @@
       "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/config.js\")",
       "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/api/crm.js\")",
       "Bash(python -c ' *)",
-      "Bash(grep -Ei \"^\\\\.env$|cert\\\\.pem|key\\\\.pem\")"
+      "Bash(grep -Ei \"^\\\\.env$|cert\\\\.pem|key\\\\.pem\")",
+      "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/main.js\")",
+      "Bash(sed -n '/function showActions/,/^}/p')",
+      "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/widget.html\")",
+      "Bash(sed -n '/export function renderList/,/^}/p' app/js/ui/render.js)",
+      "Bash(sed -n '/export function toItem/,/^}/p' app/js/api/workdrive.js)"
     ]
   }
 }
