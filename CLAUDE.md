@@ -37,8 +37,7 @@ Confirmed against the live CRM on 2026-09-09. These are expensive to rediscover.
 | | |
 |---|---|
 | Module | `Jobs` (custom module, layout `Standard__s`) |
-| Field (primary) | `WorkDrive_URL` — website type, 450 chars, id `2582206000076840576`. Clickable on the record; the widget parses the folder ID off the end. |
-| Field (fallback) | `WorkDrive_Folder_ID` — text, 100 chars, id `2582206000076819004`. A bare ID works too. |
+| Field | `WorkDrive_URL` — website type, 450 chars, id `2582206000076840576`. The only field the widget reads. Clickable on the record; the folder ID is parsed off the end. `extractFolderId()` also accepts a bare ID, deliberately, for hand-edited values. |
 | Connection | `wd` (service `zoho_workdrive`), already authorized |
 | Scopes | Has `WorkDrive.files.ALL` + `WorkDrive.files.CREATE`. **Nothing to enable.** |
 | JS SDK | `https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js` |

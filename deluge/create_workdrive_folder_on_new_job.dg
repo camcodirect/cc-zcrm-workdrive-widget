@@ -1,4 +1,4 @@
-string standalone.create_workdrive_folder_on_new_job(int recId)
+void automation.create_workdrive_folder_on_new_job(int recId)
 {
 	//
 	// DEV VARIABLES
@@ -35,12 +35,15 @@ string standalone.create_workdrive_folder_on_new_job(int recId)
 	//
 	// TOP LEVEL VARIABLES
 	//
-	// respStr IS THE SINGLE RETURN VALUE - EVERY EXIT PATH SETS IT AND RETURNS IT.
-	// PREFIXES ARE MACHINE-READABLE SO A CALLER CAN BRANCH ON startsWith("SUCCESS"),
-	// startsWith("SKIPPED") OR startsWith("ERROR") WITHOUT PARSING THE WHOLE STRING.
+	// THIS IS A WORKFLOW FUNCTION - CATEGORY automation, RETURN TYPE void.
+	// A WORKFLOW FUNCTION CANNOT RETURN A VALUE, SO THERE ARE NO return STATEMENTS
+	// ANYWHERE IN HERE. EVERY EXIT PATH SETS respStr AND LOGS IT INSTEAD, AND FLOW
+	// IS CONTROLLED WITH A isDoneBool GUARD SO LATER BLOCKS ARE SKIPPED.
+	// PREFIXES STAY MACHINE-READABLE FOR THE FUNCTION LOG.
 	respStr = "";
 	newFolderIdStr = "";
 	newFolderUrlStr = "";
+	isDoneBool = false;
 
 	//
 	// RUN CODE
@@ -57,53 +60,64 @@ string standalone.create_workdrive_folder_on_new_job(int recId)
 		{
 			respStr = "ERROR: JOB RECORD NOT FOUND FOR ID " + recId;
 			info respStr;
-			return respStr;
+			isDoneBool = true;
 		}
 		//
 		// BAIL OUT IF THE WORKDRIVE URL IS ALREADY POPULATED
 		//
-		existingUrlStr = ifnull(job.getJSON("WorkDrive_URL"),"");
-		if(existingUrlStr != "" && existingUrlStr != null)
+		if(!isDoneBool)
 		{
-			respStr = "SKIPPED: WORKDRIVE URL ALREADY SET ON JOB " + recId + " - " + existingUrlStr;
-			info respStr;
-			return respStr;
+			existingUrlStr = ifnull(job.getJSON("WorkDrive_URL"),"");
+			if(existingUrlStr != "" && existingUrlStr != null)
+			{
+				respStr = "SKIPPED: WORKDRIVE URL ALREADY SET ON JOB " + recId + " - " + existingUrlStr;
+				info respStr;
+				isDoneBool = true;
+			}
 		}
 		//
 		// BUILD THE FOLDER NAME FROM THE JOB NAME
 		//
 		// "Name" CONFIRMED VIA MCP AS THE JOB'S PRIMARY FIELD (2026-09-09).
 		// READ THROUGH nameFieldStr SO ANOTHER MODULE ONLY NEEDS A CONFIG CHANGE.
-		jobNameStr = ifnull(job.getJSON(nameFieldStr),"").trim();
-		if(jobNameStr = "")
+		folderNameStr = "";
+		if(!isDoneBool)
 		{
-			jobNameStr = moduleStr + " " + recId;
+			jobNameStr = ifnull(job.getJSON(nameFieldStr),"").trim();
+			if(jobNameStr = "")
+			{
+				jobNameStr = moduleStr + " " + recId;
+			}
+			// WORKDRIVE REJECTS THESE CHARACTERS OUTRIGHT - STRIP THEM BEFORE SENDING
+			folderNameStr = jobNameStr.replaceAll("\\","-",true).replaceAll("/","-",true).replaceAll(":","-",true).replaceAll("*","-",true).replaceAll("?","-",true).replaceAll("\"","-",true).replaceAll("<","-",true).replaceAll(">","-",true).replaceAll("|","-",true).trim();
+			info "THIS IS THE FOLDER NAME TO CREATE IN WORKDRIVE";
+			info folderNameStr;
 		}
-		// WORKDRIVE REJECTS THESE CHARACTERS OUTRIGHT - STRIP THEM BEFORE SENDING
-		folderNameStr = jobNameStr.replaceAll("\\","-",true).replaceAll("/","-",true).replaceAll(":","-",true).replaceAll("*","-",true).replaceAll("?","-",true).replaceAll("\"","-",true).replaceAll("<","-",true).replaceAll(">","-",true).replaceAll("|","-",true).trim();
-		info "THIS IS THE FOLDER NAME TO CREATE IN WORKDRIVE";
-		info folderNameStr;
 		//
 		// CREATE THE FOLDER IN WORKDRIVE
 		//
 		// BUILT-IN TASK SIGNATURE: zoho.workdrive.createFolder(folderName, parent_id, connection)
 		// THE TASK HANDLES THE JSON:API ENVELOPE AND THE vnd.api+json HEADERS ITSELF,
 		// SO THERE IS NO 415 TRAP TO WORK AROUND HERE.
-		createFolderResp = zoho.workdrive.createFolder(folderNameStr,parentFolderIdStr,"wd");
-		info "THIS IS THE RESPONSE FROM CREATING THE WORKDRIVE FOLDER";
-		info createFolderResp;
-		if(createFolderResp = null)
+		createFolderResp = Map();
+		if(!isDoneBool)
 		{
-			respStr = "ERROR: NO RESPONSE FROM zoho.workdrive.createFolder FOR JOB " + recId;
-			info respStr;
-			sendmail
-			[
-				from :zoho.loginuserid
-				to :"john@camco.tech"
-				subject :"error on create_workdrive_folder_on_new_job"
-				message :"zoho.workdrive.createFolder returned nothing for Job " + recId
-			]
-			return respStr;
+			createFolderResp = zoho.workdrive.createFolder(folderNameStr,parentFolderIdStr,"wd");
+			info "THIS IS THE RESPONSE FROM CREATING THE WORKDRIVE FOLDER";
+			info createFolderResp;
+			if(createFolderResp = null)
+			{
+				respStr = "ERROR: NO RESPONSE FROM zoho.workdrive.createFolder FOR JOB " + recId;
+				info respStr;
+				sendmail
+				[
+					from :zoho.loginuserid
+					to :"john@camco.tech"
+					subject :"error on create_workdrive_folder_on_new_job"
+					message :"zoho.workdrive.createFolder returned nothing for Job " + recId
+				]
+				isDoneBool = true;
+			}
 		}
 		//
 		// PULL THE NEW FOLDER ID OUT OF THE RESPONSE
@@ -111,70 +125,86 @@ string standalone.create_workdrive_folder_on_new_job(int recId)
 		// THE TASK RETURNS THE JSON:API PAYLOAD AS A KEY-VALUE:
 		//   SUCCESS SHAPE:  {"data":[{"id":"...","attributes":{...}}]}
 		//   ERROR SHAPE:    {"errors":[{"id":"F000","title":"..."}]}
-		if(createFolderResp.getJSON("errors") != null)
+		if(!isDoneBool)
 		{
-			respStr = "ERROR: WORKDRIVE REFUSED THE FOLDER CREATE FOR JOB " + recId + " - " + createFolderResp.getJSON("errors").toString();
-			info respStr;
-			sendmail
-			[
-				from :zoho.loginuserid
-				to :"john@camco.tech"
-				subject :"error on create_workdrive_folder_on_new_job"
-				message :"WorkDrive refused the folder create for Job " + recId + "<br> " + createFolderResp.toString()
-			]
-			return respStr;
-		}
-		folderDataLst = createFolderResp.getJSON("data");
-		if(folderDataLst = null)
-		{
-			// SOME BUILT-IN TASKS HAND BACK THE RESOURCE FLAT INSTEAD OF WRAPPED IN "data"
-			newFolderIdStr = ifnull(createFolderResp.getJSON("id"),"");
-		}
-		else if(folderDataLst.toString().startsWith("["))
-		{
-			// THE CREATE ENDPOINT RETURNS A LIST - OLDER RESPONSES RETURN A BARE OBJECT, SO HANDLE BOTH
-			if(folderDataLst.size() > 0)
+			if(createFolderResp.getJSON("errors") != null)
 			{
-				newFolderIdStr = folderDataLst.get(0).getJSON("id");
+				respStr = "ERROR: WORKDRIVE REFUSED THE FOLDER CREATE FOR JOB " + recId + " - " + createFolderResp.getJSON("errors").toString();
+				info respStr;
+				sendmail
+				[
+					from :zoho.loginuserid
+					to :"john@camco.tech"
+					subject :"error on create_workdrive_folder_on_new_job"
+					message :"WorkDrive refused the folder create for Job " + recId + "<br> " + createFolderResp.toString()
+				]
+				isDoneBool = true;
 			}
 		}
-		else
+		if(!isDoneBool)
 		{
-			newFolderIdStr = folderDataLst.getJSON("id");
+			folderDataLst = createFolderResp.getJSON("data");
+			if(folderDataLst = null)
+			{
+				// SOME BUILT-IN TASKS HAND BACK THE RESOURCE FLAT INSTEAD OF WRAPPED IN "data"
+				newFolderIdStr = ifnull(createFolderResp.getJSON("id"),"");
+			}
+			else if(folderDataLst.toString().startsWith("["))
+			{
+				// THE CREATE ENDPOINT RETURNS A LIST - OLDER RESPONSES RETURN A BARE OBJECT, SO HANDLE BOTH
+				if(folderDataLst.size() > 0)
+				{
+					newFolderIdStr = folderDataLst.get(0).getJSON("id");
+				}
+			}
+			else
+			{
+				newFolderIdStr = folderDataLst.getJSON("id");
+			}
+			if(newFolderIdStr = "" || newFolderIdStr = null)
+			{
+				respStr = "ERROR: COULD NOT READ THE NEW FOLDER ID FOR JOB " + recId + " - " + createFolderResp.toString();
+				info respStr;
+				isDoneBool = true;
+			}
+			else
+			{
+				info "THIS IS THE NEW WORKDRIVE FOLDER ID";
+				info newFolderIdStr;
+			}
 		}
-		if(newFolderIdStr = "" || newFolderIdStr = null)
-		{
-			respStr = "ERROR: COULD NOT READ THE NEW FOLDER ID FOR JOB " + recId + " - " + createFolderResp.toString();
-			info respStr;
-			return respStr;
-		}
-		info "THIS IS THE NEW WORKDRIVE FOLDER ID";
-		info newFolderIdStr;
 		//
 		// UPDATE THE JOB RECORD WITH THE WORKDRIVE URL
 		//
-		newFolderUrlStr = "https://workdrive.zoho.com/folder/" + newFolderIdStr;
-		updateMp = Map();
-		updateMp.put("WorkDrive_URL",newFolderUrlStr);
-		updateJob = zoho.crm.updateRecord(moduleStr,recId,updateMp);
-		info "THIS IS THE RESPONSE FROM UPDATING THE JOB RECORD";
-		info updateJob;
-		if(updateJob.getJSON("id") = null)
+		if(!isDoneBool)
 		{
-			// THE ONLY PATH THAT LEAVES REAL GARBAGE BEHIND - THE FOLDER EXISTS BUT NOTHING POINTS AT IT
-			respStr = "ERROR: ORPHANED FOLDER " + newFolderIdStr + " CREATED BUT THE UPDATE FAILED ON JOB " + recId + " - " + updateJob.toString();
-			info respStr;
-			sendmail
-			[
-				from :zoho.loginuserid
-				to :"john@camco.tech"
-				subject :"error on create_workdrive_folder_on_new_job"
-				message :"Folder " + newFolderIdStr + " was created in WorkDrive but the Jobs update failed for record " + recId + ". The folder is orphaned. <br> " + updateJob.toString()
-			]
-			return respStr;
+			newFolderUrlStr = "https://workdrive.zoho.com/folder/" + newFolderIdStr;
+			updateMp = Map();
+			updateMp.put("WorkDrive_URL",newFolderUrlStr);
+			updateJob = zoho.crm.updateRecord(moduleStr,recId,updateMp);
+			info "THIS IS THE RESPONSE FROM UPDATING THE JOB RECORD";
+			info updateJob;
+			if(updateJob.getJSON("id") = null)
+			{
+				// THE ONLY PATH THAT LEAVES REAL GARBAGE BEHIND - THE FOLDER EXISTS BUT NOTHING POINTS AT IT
+				respStr = "ERROR: ORPHANED FOLDER " + newFolderIdStr + " CREATED BUT THE UPDATE FAILED ON JOB " + recId + " - " + updateJob.toString();
+				info respStr;
+				sendmail
+				[
+					from :zoho.loginuserid
+					to :"john@camco.tech"
+					subject :"error on create_workdrive_folder_on_new_job"
+					message :"Folder " + newFolderIdStr + " was created in WorkDrive but the Jobs update failed for record " + recId + ". The folder is orphaned. <br> " + updateJob.toString()
+				]
+				isDoneBool = true;
+			}
+			else
+			{
+				respStr = "SUCCESS: CREATED FOLDER " + newFolderIdStr + " AND UPDATED JOB " + recId + " - " + newFolderUrlStr;
+				info respStr;
+				isDoneBool = true;
+			}
 		}
-		respStr = "SUCCESS: CREATED FOLDER " + newFolderIdStr + " AND UPDATED JOB " + recId + " - " + newFolderUrlStr;
-		info respStr;
 	}
 	catch (e)
 	{
@@ -188,5 +218,6 @@ string standalone.create_workdrive_folder_on_new_job(int recId)
 			message :"See error below <br> " + e
 		]
 	}
-	return respStr;
+	info "THIS IS THE FINAL RESULT OF create_workdrive_folder_on_new_job";
+	info respStr;
 }

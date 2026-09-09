@@ -217,12 +217,12 @@
             log("getRecord", r);
             const rec = r && r.data && r.data[0];
             if (rec) {
-              const val = rec.WorkDrive_URL || rec.WorkDrive_Folder_ID;
+              const val = rec.WorkDrive_URL;
               if (val) {
                 document.getElementById("folderId").value = String(val).split("/").pop();
                 log("prefilled folder id", document.getElementById("folderId").value);
               } else {
-                log("note", "Neither WorkDrive_Folder_ID nor WorkDrive_URL is set on this record. Paste an ID manually.");
+                log("note", "WorkDrive_URL is not set on this record. Paste a folder ID manually.");
               }
             }
           })

@@ -59,7 +59,7 @@ Sandbox tree `_Widget Test Jobs` (`hr0wcd0b9ffb36e2e45b5bc0d4f0e93c3e3dd`) in th
 | JOB-1003 Miller Warehouse HVAC Install | `hr0wc58e61fbc6ee34a5e9c793fc81c75558f` | 1 file |
 | JOB-1004 Ashwood Deck Rebuild | `hr0wcd08e85377f574d409ce3557b02436a81` | empty — **empty-state test** |
 
-All four have both `WorkDrive_URL` and `WorkDrive_Folder_ID` populated.
+All four have `WorkDrive_URL` populated. (They also had `WorkDrive_Folder_ID`, but that field was removed from Jobs on 2026-09-09 — `WorkDrive_URL` is now the only one.)
 
 Every folder came back `is_published=false` with `capabilities.can_publish=true`, so nothing has an embed code yet — a clean slate if the read-only embed fallback is ever needed.
 

@@ -10,19 +10,15 @@
 // which in practice means a misconfigured placement. Nothing else reads it.
 export const DEFAULT_MODULE = "Jobs";
 
-// WorkDrive_URL (a website field) is primary: it renders as a clickable link
-// on the record, so people can jump straight to WorkDrive without the widget.
-// The widget parses the folder ID off the end of it.
+// The only field the widget reads. A website field, so it renders as a
+// clickable link on the record and people can reach WorkDrive without the
+// widget. The folder ID is parsed off the end of it.
 //
-// WorkDrive_Folder_ID (plain text) is read as a fallback, so a record holding
-// only a bare ID still works. Either field alone is enough.
-//
-// These API names must match on every module the widget is placed on. A field
+// This API name must match on every module the widget is placed on. A field
 // labelled "WorkDrive URL" gets the API name WorkDrive_URL by default, but CRM
 // will append a suffix if the name is already taken — check the API name in
 // Setup rather than assuming it from the label.
 export const FIELD = "WorkDrive_URL";
-export const FALLBACK_FIELD = "WorkDrive_Folder_ID";
 
 // Where to look for a record's display name, in order. Different modules use
 // different primary fields: Jobs and most custom modules use "Name", Deals use

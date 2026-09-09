@@ -5,7 +5,7 @@
  * runtime from PageLoad rather than being compiled in.
  */
 
-import { FIELD, FALLBACK_FIELD, NAME_FIELDS } from "../config.js";
+import { FIELD, NAME_FIELDS } from "../config.js";
 
 /**
  * PageLoad hands back EntityId as a bare string in some widget placements and
@@ -18,8 +18,12 @@ export function normalizeEntityId(raw) {
 }
 
 /**
- * Accepts either a bare folder ID or a full WorkDrive URL and returns the ID.
- * Keeps working for records still holding a legacy URL value.
+ * Accepts either a full WorkDrive URL or a bare folder ID and returns the ID.
+ *
+ * The URL is the normal case — it's what the field holds and what the Deluge
+ * automation writes. Accepting a bare ID too is deliberate tolerance, not
+ * leftovers: someone hand-editing the field can reasonably paste just the ID,
+ * and there's no good reason to reject a value we can understand.
  */
 export function extractFolderId(value) {
   if (!value) return null;
@@ -75,7 +79,7 @@ export async function getRecordFolder(entity, recordId) {
   const record = resp && resp.data && resp.data[0];
   if (!record) return { ok: false, reason: "FETCH_FAILED" };
 
-  const raw = record[FIELD] || record[FALLBACK_FIELD];
+  const raw = record[FIELD];
   const name = recordName(record);
 
   if (!raw) return { ok: false, reason: "NO_FOLDER", recordName: name };
