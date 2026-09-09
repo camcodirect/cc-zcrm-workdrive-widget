@@ -34,7 +34,7 @@ Every job has a folder of documents somewhere in WorkDrive: photos, scopes of wo
 
 On a record page it shows:
 
-- The contents of the record's WorkDrive folder, folders first, then files by name
+- The contents of the record's WorkDrive folder, folders first, then files by name, each with an icon for its file type
 - Breadcrumb navigation into subfolders and back out
 - **New Folder**, which creates a subfolder in the folder you're viewing
 - **Upload**, plus drag-and-drop anywhere on the panel
@@ -57,6 +57,8 @@ A CRM sidebar is the wrong place to offer irreversible destruction of a client's
 The confirmation dialog names the items being removed rather than just counting them, warns separately when a folder is included (folders go with everything inside them), and focuses Cancel rather than the destructive button. Two tests pin `TRASH_STATUS === "61"` and the PATCH payload shape, so a change that would cause permanent deletion fails the suite before it reaches production.
 
 Trashing goes through `CONNECTION.invoke` rather than a Deluge function, because there is no WorkDrive Deluge task for deletion and the payload is a small JSON array of IDs, not a file. A successful trash returns `204` with no body, so `trashItems()` treats any 2xx as done rather than looking for a `data` key.
+
+Because it's a `PATCH`, it's a write: the `wd` connection needs `WorkDrive.files.ALL`, and the account that authorized that connection needs delete rights on the folder itself. See [Delete needs write permission, in two places](#delete-needs-write-permission-in-two-places).
 
 ### What it deliberately does not do
 
@@ -120,13 +122,27 @@ The widget talks to WorkDrive through a named CRM connection. Without it every c
 2. Click **Create Connection**, pick **Zoho OAuth**, and choose the **Zoho WorkDrive** service.
 3. Name it exactly **`wd`**. The connection *Link Name* is what the code uses.
 4. Add these scopes:
-   - `WorkDrive.files.ALL`
-   - `WorkDrive.files.CREATE`
+
+   | Scope | Needed for |
+   |---|---|
+   | `WorkDrive.files.ALL` | Listing folders, and **deleting** (moving items to Trash) |
+   | `WorkDrive.files.CREATE` | Creating folders, uploading files |
+
 5. Save, then click **Authorize** and complete the OAuth prompt.
 
 Verify the connection shows as authorized before moving on. If you name it something other than `wd`, change `CONNECTION` in [`app/js/config.js`](app/js/config.js) and `connectionStr` in both Deluge functions to match.
 
-> An `authentication.status: true` on a connection only means a token exists. It does not prove the token works. The first real API call is the actual test.
+### Delete needs write permission, in two places
+
+Delete is the one operation where the scope alone isn't enough, and the two requirements fail in different ways.
+
+**The connection needs `WorkDrive.files.ALL`.** Trashing is a `PATCH /files`, a write, so a connection carrying only read or only `CREATE` scope cannot do it. `WorkDrive.files.ALL` covers reads and writes, which is why it appears against both listing and deleting above.
+
+**The connection's owner needs delete rights on the folder in WorkDrive.** Every call runs as whoever authorized the connection, not as the CRM user clicking the button. If that account has view-only or comment-only access to the team folder, trashing fails no matter how the scopes are set. This is the more common cause in practice, and the one no amount of re-authorizing will fix.
+
+A failure from either shows up as **"You don't have permission to view this folder in WorkDrive"** on the delete action, because WorkDrive answers both with a 403. Check the owner's access to the folder first; it's the likelier of the two and the faster to confirm.
+
+> An `authentication.status: true` on a connection only means a token exists. It does not prove the token works, and it says nothing about what the owning account may do inside WorkDrive. The first real API call is the actual test.
 
 ---
 
@@ -380,7 +396,7 @@ To test against real CRM data, register a second dev-only widget in CRM Setup po
 npm test
 ```
 
-36 tests covering the pure logic: folder ID parsing, envelope unwrapping, pagination termination, attribute normalization across endpoint shapes, record-name resolution, HTML escaping, and the trash payload. Anything needing a live CRM iframe is out of scope by design; parsing and formatting are kept pure so they stay testable outside a browser.
+42 tests covering the pure logic: folder ID parsing, envelope unwrapping, pagination termination, attribute normalization across endpoint shapes, record-name resolution, HTML escaping, file-type icon mapping, and the trash payload. Anything needing a live CRM iframe is out of scope by design; parsing and formatting are kept pure so they stay testable outside a browser.
 
 Two of those tests exist as a safety canary rather than to catch a likely bug: they pin `TRASH_STATUS` to `"61"` and the exact PATCH payload shape, so a change that would turn trashing into permanent deletion fails the suite instead of reaching a client's documents. Don't delete them.
 
@@ -470,6 +486,7 @@ That last one matters if different CRM users are meant to see different document
 | "That folder ID doesn't look right" | The field holds something that isn't a WorkDrive URL or a bare ID |
 | "Folder not found" | The folder was deleted or moved, or the ID is wrong |
 | "No access to this folder" | The `wd` connection's owner cannot reach that folder in WorkDrive |
+| Everything works except delete | Either the connection is missing `WorkDrive.files.ALL` (trashing is a write), or its owner has view-only access to the folder. See [step 1](#delete-needs-write-permission-in-two-places) |
 | Browsing works, uploads fail | Most often the function's **REST API** toggles (`OAuth 2.0` and `API Key`) are off; see [step 5](#the-rest-api-toggles-are-required). Otherwise the function isn't deployed, isn't published, or its argument names don't match |
 | Upload function won't save in CRM | A `base64Decode` call that isn't `zoho.encryption.base64DecodeToFile`; see the note under [Verified integration facts](#verified-integration-facts) |
 | Upload function saves but throws "No. of arguments mismatch" | `base64DecodeToFile` was called with one argument; it needs the file name as a second |
@@ -520,7 +537,8 @@ Confirmed against a live CRM tenant on 2026-09-09. These are expensive to redisc
 | Field | `WorkDrive_URL` (URL type, 450 chars) |
 | Fallback field | `WorkDrive_Folder_ID` (text, 100 chars) |
 | Connection | `wd` (service `zoho_workdrive`), authorized |
-| Scopes | `WorkDrive.files.ALL` + `WorkDrive.files.CREATE` |
+| Scopes | `WorkDrive.files.ALL` (read + write, and what delete needs) + `WorkDrive.files.CREATE` |
+| Delete | Also requires the connection owner to hold delete rights on the folder in WorkDrive; the scope alone is not enough |
 | JS SDK | `https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js` |
 
 ### WorkDrive endpoints (base `https://www.zohoapis.com/workdrive/api/v1`)

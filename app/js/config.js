@@ -36,6 +36,12 @@ export const NAME_FIELDS = [
 
 // CRM Connection (Setup > Developer Hub > Connections). Already authorized
 // with WorkDrive.files.ALL + WorkDrive.files.CREATE, which covers every call.
+//
+// Delete (trashItems) is a PATCH, so it needs the write half of files.ALL —
+// and separately, the account that authorized this connection needs delete
+// rights on the folder in WorkDrive. Every call runs as that account, not as
+// the CRM user clicking the button, so view-only access there means delete
+// fails with a 403 no matter what the scopes say.
 export const CONNECTION = "wd";
 
 export const WD_API = "https://www.zohoapis.com/workdrive/api/v1";

@@ -40,6 +40,7 @@ Confirmed against the live CRM on 2026-09-09. These are expensive to rediscover.
 | Field | `WorkDrive_URL` — website type, 450 chars, id `2582206000076840576`. The only field the widget reads. Clickable on the record; the folder ID is parsed off the end. `extractFolderId()` also accepts a bare ID, deliberately, for hand-edited values. |
 | Connection | `wd` (service `zoho_workdrive`), already authorized |
 | Scopes | Has `WorkDrive.files.ALL` + `WorkDrive.files.CREATE`. **Nothing to enable.** |
+| Delete | Trashing is a `PATCH`, so it rides the write half of `files.ALL`. Separately, the connection's **owner** needs delete rights on the folder in WorkDrive — calls run as that account, not the CRM user, so view-only access there is a 403 regardless of scopes. |
 | JS SDK | `https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js` |
 | Widget URL | `https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/widget.html` |
 
