@@ -167,11 +167,31 @@ Confirm the field names `toItem()` in `api/workdrive.js` reads:
 
 ## Upload
 
+### The function's REST API toggles must be ON — settled 2026-09-09
+
+`ZOHO.CRM.FUNCTIONS.execute()` will not reach a standalone function unless that function exposes a REST endpoint. On the function's **Overview → REST API** panel, both **`OAuth 2.0`** and **`API Key`** have to be enabled.
+
+This is genuinely counter-intuitive, and the reasoning that says otherwise is wrong:
+
+> The widget already runs inside an authenticated CRM session, and the function reaches WorkDrive through the `wd` connection rather than any credential of its own. So nothing in the chain should need a REST endpoint.
+
+That argument was written into the README and it was wrong. With both toggles off, uploads fail. Turning them on, with no other change, made uploads work. `FUNCTIONS.execute()` evidently goes through the function's REST endpoint, so the endpoint has to exist.
+
+**Diagnostic signature:** browsing, folder creation, and delete all work; only uploads fail. Those three go through `CONNECTION.invoke` and need nothing on the function. Uploads are the only path that touches it, so an upload-only failure points here first.
+
+Neither generated URL needs to be copied into the widget. Note that the API Key URL embeds a live `zapikey` that lets anyone holding it execute the function — it's a credential, so keep it out of tickets, commits, and screenshots.
+
+```
+OAuth 2.0   .../crm/v7/functions/upload_file_to_workdrive/actions/execute?auth_type=oauth
+API Key     .../crm/v7/functions/upload_file_to_workdrive/actions/execute?auth_type=apikey&zapikey=<redacted>
+```
+
+### Still to record
+
 ```
 (paste the winning request and its response)
 ```
 
-Also record:
 - The largest file that actually made it through, and where it started failing.
 - What a duplicate filename returns with `override-name-exist: false`.
 

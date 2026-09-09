@@ -83,3 +83,13 @@ The original code rendered `data` and assumed it was everything. On a real job f
 **Why:** The publish permission and the write requirement are mutually exclusive by design, not by configuration.
 
 **Rule going forward:** When a requirement arrives late ("also let them upload"), re-check whether it invalidates the transport, not just the UI. Here it invalidated the entire approach.
+
+---
+
+## `FUNCTIONS.execute()` needs the function's REST API toggles on
+
+**What went wrong:** The README stated that the `upload_file_to_workdrive` function needs neither OAuth nor an API key enabled. That was wrong, and it was documented confidently enough to send someone debugging elsewhere. Uploads only worked once **both** `OAuth 2.0` and `API Key` were switched on in the function's Overview → REST API panel.
+
+**Why:** The reasoning behind the wrong claim was plausible, which is what made it dangerous. The widget calls the function from an already-authenticated CRM session, and the function reaches WorkDrive through the `wd` connection rather than any credential of its own, so no part of the visible chain looks like it needs a REST endpoint. But `ZOHO.CRM.FUNCTIONS.execute()` evidently dispatches over the function's REST endpoint, so the endpoint has to exist for the call to land at all.
+
+**Rule going forward:** Enable both toggles on any standalone function a widget calls. When browsing, folder creation, and delete all work and *only* uploads fail, check this before anything else — those three go through `CONNECTION.invoke` and touch nothing on the function, so an upload-only failure isolates the cause to the function itself. More generally: an architectural argument for why a setting "shouldn't" be needed is not evidence. Toggle it and observe.

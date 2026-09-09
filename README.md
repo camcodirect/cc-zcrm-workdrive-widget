@@ -200,7 +200,7 @@ Open a record that has `WorkDrive_URL` populated. The folder contents should app
 
 ## Setup part 5: the upload function (required)
 
-**Uploads do not work without this.** Browsing and folder creation will work fine, which makes it easy to think setup is finished when it isn't.
+**Uploads do not work without this.** Browsing, folder creation, and delete all work fine without it, which makes it easy to think setup is finished when it isn't. Two parts have to be right: the function itself, and the REST API toggles on it. Miss either and uploads are the only thing that fails.
 
 The reason is in [Known issues](#uploads-cannot-go-through-the-connection-layer): `ZOHO.CRM.CONNECTION.invoke` marshals its payload as `application/x-www-form-urlencoded`, and a base64 file of any real size is rejected before it ever reaches WorkDrive. Uploads route through a Deluge function instead, where `zoho.workdrive.uploadFile` handles multipart properly server-side.
 
@@ -226,9 +226,24 @@ The reason is in [Known issues](#uploads-cannot-go-through-the-connection-layer)
 
 5. If your connection is not named `wd`, update `connectionStr` at the top of the function.
 6. **Save**, then **Publish**. An unpublished function is not callable from a widget.
-7. Under the function's **REST API** / access settings, make sure it is available to the users who will use the widget.
+7. Open the function's **Overview** tab and find the **REST API** panel. **Turn on both `OAuth 2.0` and `API Key`.**
 
-**You do not need to enable OAuth or generate an API key on the function itself.** That question comes up because the function's settings screen offers both. The widget calls it through `ZOHO.CRM.FUNCTIONS.execute()` from inside an authenticated CRM session, so the caller is already authenticated, and the function reaches WorkDrive through the `wd` connection set up in [step 1](#setup-part-1-the-crm-connection). The REST API toggle is for calling the function from outside CRM, which this widget never does.
+### The REST API toggles are required
+
+This is the step that makes uploads work, and it is not obvious. Reading the docs you would expect it to be unnecessary: the widget calls the function through `ZOHO.CRM.FUNCTIONS.execute()` from inside an already-authenticated CRM session, and the function reaches WorkDrive through the `wd` connection rather than through any credential on the function itself. Nothing in that chain looks like it needs a REST endpoint.
+
+It needs one anyway. **Verified 2026-09-09:** with both toggles off, uploads fail; turning on `OAuth 2.0` and `API Key` made them work, with no other change. `ZOHO.CRM.FUNCTIONS.execute()` evidently reaches the function over its REST endpoint, so the function has to expose one.
+
+Enabling the toggles reveals two URLs on the panel. You do not need to copy either into the widget:
+
+```
+OAuth 2.0   https://www.zohoapis.com/crm/v7/functions/upload_file_to_workdrive/actions/execute?auth_type=oauth
+API Key     https://www.zohoapis.com/crm/v7/functions/upload_file_to_workdrive/actions/execute?auth_type=apikey&zapikey=<key>
+```
+
+> **The API Key URL embeds a live `zapikey` that grants anyone who has it the ability to run this function.** Treat it as a credential: don't paste it into a ticket, a commit, or a screenshot. Regenerate it from this panel if it leaks.
+
+Symptom when this is the problem: browsing, folder creation, and delete all work, and only uploads fail. Those three go through `CONNECTION.invoke`, which needs nothing on the function; uploads are the only path that touches it.
 
 To confirm it works, open a record and upload a small file. On failure the widget shows the function's own error text rather than a generic message, and a function that isn't deployed produces a specific "isn't set up in CRM yet" message rather than a vague one.
 
@@ -455,7 +470,7 @@ That last one matters if different CRM users are meant to see different document
 | "That folder ID doesn't look right" | The field holds something that isn't a WorkDrive URL or a bare ID |
 | "Folder not found" | The folder was deleted or moved, or the ID is wrong |
 | "No access to this folder" | The `wd` connection's owner cannot reach that folder in WorkDrive |
-| Browsing works, uploads fail | The `upload_file_to_workdrive` function isn't deployed, isn't published, or its argument names don't match |
+| Browsing works, uploads fail | Most often the function's **REST API** toggles (`OAuth 2.0` and `API Key`) are off; see [step 5](#the-rest-api-toggles-are-required). Otherwise the function isn't deployed, isn't published, or its argument names don't match |
 | Upload function won't save in CRM | A `base64Decode` call that isn't `zoho.encryption.base64DecodeToFile`; see the note under [Verified integration facts](#verified-integration-facts) |
 | Upload function saves but throws "No. of arguments mismatch" | `base64DecodeToFile` was called with one argument; it needs the file name as a second |
 | Deleted file is gone from the widget but still in WorkDrive | Working as designed. Delete moves items to Trash, where they stay until emptied |
