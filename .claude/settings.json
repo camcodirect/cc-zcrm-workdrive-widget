@@ -18,7 +18,10 @@
       "Bash(sed -n '/export function renderList/,/^}/p' app/js/ui/render.js)",
       "Bash(sed -n '/export function toItem/,/^}/p' app/js/api/workdrive.js)",
       "Bash(rm -f dl-sort.png dl-hover.png search.png)",
-      "Bash(rm -rf .playwright-mcp)"
+      "Bash(rm -rf .playwright-mcp)",
+      "PowerShell($c = Get-Content \"E:\\\\claude-projects\\\\cc-zcrm-workdrive-widget\\\\README.md\"; \"TOTAL: $\\($c.Count\\)\"; \"----- 1-30 -----\"; $c[0..29] -join \"`n\"; \"----- 69..110 -----\"; $c[68..109] -join \"`n\")",
+      "PowerShell($p=\"E:\\\\claude-projects\\\\cc-zcrm-workdrive-widget\\\\README.md\"; $c=Get-Content $p; \\($c[70..86] | ForEach-Object { $i++; \"$\\($i+70\\): $_\" }\\))",
+      "PowerShell($p=\"E:\\\\claude-projects\\\\cc-zcrm-workdrive-widget\\\\README.md\"; $c=Get-Content $p -Encoding UTF8; \\($c[86..96] | ForEach-Object { $i++; \"$\\($i+86\\): $_\" }\\))"
     ]
   }
 }
