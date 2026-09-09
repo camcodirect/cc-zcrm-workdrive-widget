@@ -53,8 +53,10 @@ function showActions(visible) {
   el.btnNewFolder.hidden = !visible;
   el.btnUpload.hidden = !visible;
   el.btnOpenWd.hidden = !visible;
-  // Delete stays hidden regardless — it appears only when something is ticked.
-  if (!visible) el.btnDelete.hidden = true;
+  // Delete is never shown by this function. Its visibility is owned solely by
+  // updateSelectionUi(), which derives it from the selection — so call that
+  // rather than setting `hidden` here, and the two can never disagree.
+  updateSelectionUi();
 }
 
 /**
@@ -385,6 +387,9 @@ function wireEvents() {
 function boot() {
   cacheElements();
   wireEvents();
+  // Nothing can be selected before a folder has loaded, so assert the Delete
+  // button's hidden state from the selection rather than trusting the markup.
+  clearSelection();
   showActions(false);
 
   if (typeof ZOHO === "undefined" || !ZOHO.embeddedApp) {
