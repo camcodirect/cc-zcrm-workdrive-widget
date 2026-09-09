@@ -57,16 +57,20 @@ string standalone.upload_file_to_workdrive(string folderIdStr, string fileNameSt
 		}
 		//
 		// REBUILD THE BINARY FROM BASE64.
-		// base64DecodeToFile RETURNS A File DIRECTLY, WHICH IS WHAT
+		// zoho.encryption.base64DecodeToFile(encoded_text,file_name) TAKES TWO
+		// MANDATORY ARGUMENTS AND RETURNS A File DIRECTLY, WHICH IS WHAT
 		// zoho.workdrive.uploadFile WANTS - NO .toFile() CHAINING NEEDED.
+		// PASS THE RAW NAME HERE, NOT THE URL ENCODED ONE.
 		//
-		// TWO WAYS THIS FAILS TO SAVE, BOTH WITH "Not able to find
-		// 'base64Decode' function":
-		//   base64Decode(str)   - NO SUCH GLOBAL, IT IS NAMESPACED
-		//   str.base64Decode()  - NOT A STRING METHOD EITHER
-		// THE NAMESPACE IS zoho.encryption, SAME AS urlEncode/urlDecode.
+		// THREE WAYS THIS FAILS TO SAVE, EACH WITH A DIFFERENT MESSAGE:
+		//   base64Decode(str)                    - NO SUCH GLOBAL, IT IS NAMESPACED
+		//   str.base64Decode()                   - NOT A STRING METHOD EITHER
+		//   base64DecodeToFile(str) WITH ONE ARG - "No. of arguments mismatch"
 		//
-		fileObj = zoho.encryption.base64DecodeToFile(fileContentStr);
+		// SIZE CEILING: 25MB OF ENCODED TEXT OUTSIDE CREATOR (50MB IN CREATOR).
+		// MAX_UPLOAD_BYTES IS 10MB, SO THE WIDGET STAYS UNDER THIS.
+		//
+		fileObj = zoho.encryption.base64DecodeToFile(fileContentStr,fileNameStr);
 		//
 		// THE DOCS ARE EXPLICIT THAT THE NAME MUST BE URL ENCODED UTF-8.
 		// SKIPPING THIS MANGLES ACCENTS AND RTL NAMES - SEE JOB-1006.

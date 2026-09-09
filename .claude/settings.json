@@ -9,7 +9,9 @@
       "mcp__claude_ai_CC-Workdrive__ZohoWorkdrive_Upload_File",
       "Bash(grep -Ei \"\\\\.env$|cert\\\\.pem|key\\\\.pem|node_modules\")",
       "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/config.js\")",
-      "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/api/crm.js\")"
+      "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/js/api/crm.js\")",
+      "Bash(python -c ' *)",
+      "Bash(grep -Ei \"^\\\\.env$|cert\\\\.pem|key\\\\.pem\")"
     ]
   }
 }

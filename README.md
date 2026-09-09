@@ -9,6 +9,7 @@ Built for the **Jobs** module at Camco, but the code is module-agnostic: it work
 ## Contents
 
 - [What it does](#what-it-does)
+  - [Delete means trash, deliberately](#delete-means-trash-deliberately)
 - [How it works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Setup part 1: the CRM connection](#setup-part-1-the-crm-connection)
@@ -37,13 +38,29 @@ On a record page it shows:
 - Breadcrumb navigation into subfolders and back out
 - **New Folder**, which creates a subfolder in the folder you're viewing
 - **Upload**, plus drag-and-drop anywhere on the panel
+- **Delete**, via per-row checkboxes and a toolbar button that appears only when something is ticked
 - **Open in WorkDrive**, which follows you into subfolders and stays available even when the listing fails
 
 Clicking a file opens it in WorkDrive. The widget is a browser and an uploader, not a viewer or an editor.
 
+### Delete means trash, deliberately
+
+WorkDrive offers two kinds of removal, and the widget only ever uses the recoverable one:
+
+| | Endpoint | Effect | Used here |
+|---|---|---|---|
+| Trash | `PATCH /files` with `attributes.status: "61"` | Moves to Trash, restorable | **Yes** |
+| Delete | `DELETE /files/{id}` | Permanent | **Never** |
+
+A CRM sidebar is the wrong place to offer irreversible destruction of a client's documents, and WorkDrive's own UI trashes by default. Don't "fix" this by switching to `DELETE`.
+
+The confirmation dialog names the items being removed rather than just counting them, warns separately when a folder is included (folders go with everything inside them), and focuses Cancel rather than the destructive button. Two tests pin `TRASH_STATUS === "61"` and the PATCH payload shape, so a change that would cause permanent deletion fails the suite before it reaches production.
+
+Trashing goes through `CONNECTION.invoke` rather than a Deluge function, because there is no WorkDrive Deluge task for deletion and the payload is a small JSON array of IDs, not a file. A successful trash returns `204` with no body, so `trashItems()` treats any 2xx as done rather than looking for a `data` key.
+
 ### What it deliberately does not do
 
-Renaming, moving, deleting, sharing, and previewing are all absent. WorkDrive already does those well, and the "Open in WorkDrive" button is one click away. Adding destructive operations to a panel embedded in a CRM record is a good way to lose a client's documents.
+Renaming, moving, sharing, and previewing are all absent. WorkDrive already does those well, and the "Open in WorkDrive" button is one click away.
 
 ---
 
@@ -60,7 +77,7 @@ CRM record page
       │                                      and parses the folder ID off the end
       │
       ├── ZOHO.CRM.CONNECTION.invoke ─────► WorkDrive REST API, via the "wd"
-      │   (list folder, create folder)      connection
+      │   (list, create folder, trash)      connection
       │
       └── ZOHO.CRM.FUNCTIONS.execute ─────► Deluge function → zoho.workdrive.uploadFile
           (upload only)                      (uploads cannot go through invoke —
@@ -74,7 +91,7 @@ The flow on load:
 3. It parses the folder ID from the end of that URL. A bare ID in the field also works.
 4. It lists the folder through the `wd` connection and renders the result.
 
-Reads and folder creation go through the CRM connection directly from the browser. **Uploads take a different path** through a Deluge function, because the connection layer cannot carry a file payload. That is the single most important thing to know when setting this up, and it is why [step 5](#setup-part-5-the-upload-function-required) is not optional.
+Reads, folder creation, and trashing go through the CRM connection directly from the browser. **Uploads take a different path** through a Deluge function, because the connection layer cannot carry a file payload. That is the single most important thing to know when setting this up, and it is why [step 5](#setup-part-5-the-upload-function-required) is not optional.
 
 ### Design notes worth knowing before you change anything
 
@@ -211,6 +228,8 @@ The reason is in [Known issues](#uploads-cannot-go-through-the-connection-layer)
 6. **Save**, then **Publish**. An unpublished function is not callable from a widget.
 7. Under the function's **REST API** / access settings, make sure it is available to the users who will use the widget.
 
+**You do not need to enable OAuth or generate an API key on the function itself.** That question comes up because the function's settings screen offers both. The widget calls it through `ZOHO.CRM.FUNCTIONS.execute()` from inside an authenticated CRM session, so the caller is already authenticated, and the function reaches WorkDrive through the `wd` connection set up in [step 1](#setup-part-1-the-crm-connection). The REST API toggle is for calling the function from outside CRM, which this widget never does.
+
 To confirm it works, open a record and upload a small file. On failure the widget shows the function's own error text rather than a generic message, and a function that isn't deployed produces a specific "isn't set up in CRM yet" message rather than a vague one.
 
 ---
@@ -292,7 +311,7 @@ What each module needs:
 
 1. A field with the API name **`WorkDrive_URL`** (label it "WorkDrive URL"; verify the API name, since CRM appends a suffix on a collision).
 2. The widget added to that module's layout as a Related List, following [step 4](#setup-part-4-registering-the-widget-in-crm). One registered widget can be placed on many modules.
-3. That's it for browsing, folder creation, and uploads. The `upload_file_to_workdrive` function is standalone and module-independent, so one copy serves every module.
+3. That's it for browsing, folder creation, uploads, and delete. The `upload_file_to_workdrive` function is standalone and module-independent, so one copy serves every module.
 
 ### Record names on other modules
 
@@ -314,7 +333,7 @@ The workflow function is the one piece that is not automatically portable, becau
 |---|---|
 | 1 | Add a URL field "WorkDrive URL" to Deals; confirm the API name is `WorkDrive_URL` |
 | 2 | Drag the existing `Job Files` widget onto the Deals layout as a Related List |
-| 3 | Paste a folder URL into a Deal and reload — browsing and uploads work immediately |
+| 3 | Paste a folder URL into a Deal and reload; browsing and uploads work immediately |
 | 4 | *(optional)* Copy the create function, set `moduleStr = "Deals"` and `nameFieldStr = "Deal_Name"`, add a workflow rule on Deals |
 
 The widget's section title is set per layout, so it can read "Job Files" on Jobs and "Deal Documents" on Deals without touching code.
@@ -346,7 +365,9 @@ To test against real CRM data, register a second dev-only widget in CRM Setup po
 npm test
 ```
 
-Covers the pure logic only: folder ID parsing, envelope unwrapping, pagination termination, attribute normalization across endpoint shapes, record-name resolution, and HTML escaping. Anything needing a live CRM iframe is out of scope by design; parsing and formatting are kept pure so they stay testable outside a browser.
+36 tests covering the pure logic: folder ID parsing, envelope unwrapping, pagination termination, attribute normalization across endpoint shapes, record-name resolution, HTML escaping, and the trash payload. Anything needing a live CRM iframe is out of scope by design; parsing and formatting are kept pure so they stay testable outside a browser.
+
+Two of those tests exist as a safety canary rather than to catch a likely bug: they pin `TRASH_STATUS` to `"61"` and the exact PATCH payload shape, so a change that would turn trashing into permanent deletion fails the suite instead of reaching a client's documents. Don't delete them.
 
 ### Debug logging
 
@@ -383,7 +404,9 @@ No amount of client-side work fixes this. `FormData` and hand-built multipart hi
 
 ### Upload size ceiling is 10 MB, and it is a guess
 
-`MAX_UPLOAD_BYTES` is set to 10 MB. That number is deliberately conservative, not measured. The file is base64'd in the browser, which inflates it about 33%, then passed as a CRM Function argument, so the real ceiling is whatever CRM accepts as an argument size, and nothing documents that limit.
+`MAX_UPLOAD_BYTES` is set to 10 MB. That number is deliberately conservative, not measured. The file is base64'd in the browser, which inflates it about 33%, then passed as a CRM Function argument.
+
+There is one documented hard limit in the chain: `zoho.encryption.base64DecodeToFile` accepts at most **25 MB of encoded text** outside Creator, which works out to roughly 18 MB of actual file. What is *not* documented is the maximum argument size CRM accepts for a function invoked from a widget, and that may well be the lower of the two.
 
 Files over the limit are rejected client-side with a message pointing the user to WorkDrive. Raise the value only after testing where it actually breaks, and record the finding in [`docs/api-findings.md`](docs/api-findings.md).
 
@@ -408,7 +431,8 @@ Every WorkDrive endpoint rejects requests without `Accept: application/vnd.api+j
 
 | Limitation | Detail |
 |---|---|
-| No rename, move, delete, or share | Deliberate. Use WorkDrive for those. |
+| No rename, move, or share | Deliberate. Use WorkDrive for those. |
+| Delete trashes, it does not remove | Items go to WorkDrive's Trash and are restorable from there. The widget cannot permanently delete, and cannot restore. |
 | No file preview | Clicking a file opens it in WorkDrive in a new tab. |
 | Duplicate names are rejected, not versioned | Uploads pass `override-name-exist: false`, so a name clash surfaces instead of silently replacing a document. |
 | Uploads are sequential | One failure does not take down the batch, but a large batch is slow. The connection layer is not a high-throughput path. |
@@ -417,7 +441,7 @@ Every WorkDrive endpoint rejects requests without `Accept: application/vnd.api+j
 | Requires the CRM iframe | The SDK and the `wd` connection only exist inside a CRM-hosted page. |
 | One connection for everyone | All calls run through `wd`, so WorkDrive-side permissions are those of the connection's owner, not the CRM user. Anyone who can see the record can see the folder. |
 
-That last one matters if different CRM users are meant to see different documents. This widget does not enforce per-user WorkDrive permissions.
+That last one matters if different CRM users are meant to see different documents. This widget does not enforce per-user WorkDrive permissions, and with delete available, anyone who can open the record can trash that record's files. Items are recoverable from WorkDrive's Trash, but the widget offers no way to restore them.
 
 ---
 
@@ -432,6 +456,9 @@ That last one matters if different CRM users are meant to see different document
 | "Folder not found" | The folder was deleted or moved, or the ID is wrong |
 | "No access to this folder" | The `wd` connection's owner cannot reach that folder in WorkDrive |
 | Browsing works, uploads fail | The `upload_file_to_workdrive` function isn't deployed, isn't published, or its argument names don't match |
+| Upload function won't save in CRM | A `base64Decode` call that isn't `zoho.encryption.base64DecodeToFile`; see the note under [Verified integration facts](#verified-integration-facts) |
+| Upload function saves but throws "No. of arguments mismatch" | `base64DecodeToFile` was called with one argument; it needs the file name as a second |
+| Deleted file is gone from the widget but still in WorkDrive | Working as designed. Delete moves items to Trash, where they stay until emptied |
 | Upload says "too large" | Over `MAX_UPLOAD_BYTES` (10 MB) |
 | WorkDrive call fails with no detail | Set `window.__WD_DEBUG = true` in the console and retry; the raw envelope is logged |
 | Folder shows fewer files than WorkDrive does | Check for the truncation banner; anything past the 1000-item ceiling is flagged |
@@ -452,8 +479,8 @@ app/                    SHIPS. Static, hosting-agnostic, no build step.
     config.js           every tunable value
     api/_shared.js      envelope unwrapping — read this before touching the API
     api/crm.js          record → folder ID
-    api/workdrive.js    list / create folder / upload
-    ui/render.js        all DOM writes
+    api/workdrive.js    list / create folder / upload / trash
+    ui/render.js        all DOM writes, including the confirm dialog
     ui/dropzone.js      drag-and-drop + file picker
 deluge/                 CRM Functions, pasted into Setup by hand
   create_workdrive_folder_on_new_job.dg
@@ -475,8 +502,8 @@ Confirmed against a live CRM tenant on 2026-09-09. These are expensive to redisc
 | | |
 |---|---|
 | Module | `Jobs` (custom module, layout `Standard__s`) |
-| Field | `WorkDrive_URL` — URL type, 450 chars |
-| Fallback field | `WorkDrive_Folder_ID` — text, 100 chars |
+| Field | `WorkDrive_URL` (URL type, 450 chars) |
+| Fallback field | `WorkDrive_Folder_ID` (text, 100 chars) |
 | Connection | `wd` (service `zoho_workdrive`), authorized |
 | Scopes | `WorkDrive.files.ALL` + `WorkDrive.files.CREATE` |
 | JS SDK | `https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js` |
@@ -488,6 +515,7 @@ Confirmed against a live CRM tenant on 2026-09-09. These are expensive to redisc
 | List folder | GET | `/files/{id}/files` | 1 |
 | Folder metadata | GET | `/files/{id}` | 1 |
 | Create folder | POST | `/files` | 2 |
+| Trash items | PATCH | `/files` | 2 |
 | Upload file | POST | `/upload` | 2 |
 
 Every endpoint needs `Accept: application/vnd.api+json`, or returns HTTP 415 every time.
@@ -498,11 +526,28 @@ Create-folder body:
 {"data":{"attributes":{"name":"...","parent_id":"<id>"},"type":"files"}}
 ```
 
-Deluge built-in tasks used server-side, both of which handle the JSON:API envelope and headers themselves, so none of the 415 workarounds apply:
+Trash body, one entry per item. Status `61` is the recoverable trash state:
+
+```json
+{"data":[{"attributes":{"status":"61"},"id":"<id>","type":"files"}]}
+```
+
+Deluge built-in tasks used server-side. Both handle the JSON:API envelope and headers themselves, so none of the 415 workarounds apply:
 
 ```javascript
 zoho.workdrive.createFolder(folderName, parentId, connection)
 zoho.workdrive.uploadFile(file, folderId, encodedName, overwrite, connection)
+zoho.encryption.base64DecodeToFile(encodedText, fileName)
 ```
+
+`base64DecodeToFile` has three failure modes worth knowing, because two of them stop the function from saving at all:
+
+| Call | Result |
+|---|---|
+| `base64Decode(str)` | No such global; the function is namespaced |
+| `str.base64Decode()` | Not a string method either |
+| `base64DecodeToFile(str)` | Saves, then fails at runtime: "No. of arguments mismatch" |
+
+Both arguments are mandatory. Pass the **raw** file name here; the URL-encoded name goes to `uploadFile` separately. There is also a 25 MB ceiling on the encoded text outside Creator, which the widget's 10 MB limit stays well under.
 
 Fuller captures, including response shapes per endpoint and the pagination evidence, are in [`docs/api-findings.md`](docs/api-findings.md).
