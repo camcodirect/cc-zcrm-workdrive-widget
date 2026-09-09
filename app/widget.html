@@ -11,6 +11,12 @@
   <div id="root">
     <div class="toolbar">
       <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+      <button class="btn danger" type="button" id="btn-delete" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+        </svg>
+        <span id="btn-delete-label">Delete</span>
+      </button>
       <a class="btn" id="btn-open-wd" href="#" target="_blank" rel="noopener" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/>
@@ -41,6 +47,8 @@
 
     <div id="uploads"></div>
   </div>
+
+  <div id="modal"></div>
 
   <input type="file" id="file-input" class="visually-hidden" multiple>
 

@@ -73,13 +73,17 @@ export function renderList(container, items) {
   container.innerHTML = items
     .map(
       (it) => `
-      <div class="row" role="button" tabindex="0"
+      <div class="row"
            data-id="${esc(it.id)}"
            data-folder="${it.isFolder ? "1" : "0"}"
-           data-name="${esc(it.name)}"
-           title="${esc(it.name)}">
-        <span class="row-icon ${it.isFolder ? "folder" : ""}">${it.isFolder ? ICONS.folder : ICONS.file}</span>
-        <span class="row-name">${esc(it.name)}</span>
+           data-name="${esc(it.name)}">
+        <label class="row-check" title="Select">
+          <input type="checkbox" data-select="${esc(it.id)}" aria-label="Select ${esc(it.name)}">
+        </label>
+        <span class="row-open" role="button" tabindex="0" title="${esc(it.name)}">
+          <span class="row-icon ${it.isFolder ? "folder" : ""}">${it.isFolder ? ICONS.folder : ICONS.file}</span>
+          <span class="row-name">${esc(it.name)}</span>
+        </span>
         <span class="row-meta row-size">${it.isFolder ? "" : esc(formatSize(it.size))}</span>
         <span class="row-meta row-date">${esc(formatDate(it.modified))}</span>
       </div>`
@@ -159,6 +163,57 @@ export function renderBanner(container, message) {
 
 export function clear(container) {
   container.innerHTML = "";
+}
+
+/**
+ * Confirmation before trashing. Names the items rather than saying "3 items",
+ * so it's possible to notice the wrong thing is selected before confirming.
+ * Resolves true on confirm, false on cancel or Escape.
+ */
+export function confirmTrash(container, items) {
+  return new Promise((resolve) => {
+    const names = items
+      .slice(0, 5)
+      .map((i) => `<li>${i.isFolder ? "📁 " : ""}${esc(i.name)}</li>`)
+      .join("");
+    const more = items.length > 5 ? `<li class="more">and ${items.length - 5} more…</li>` : "";
+    const hasFolder = items.some((i) => i.isFolder);
+
+    container.innerHTML = `
+      <div class="confirm-backdrop">
+        <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+          <div class="confirm-title" id="confirm-title">
+            Move ${items.length === 1 ? "this item" : `these ${items.length} items`} to WorkDrive trash?
+          </div>
+          <ul class="confirm-list">${names}${more}</ul>
+          ${hasFolder ? '<div class="confirm-warn">Folders are removed with everything inside them.</div>' : ""}
+          <div class="confirm-note">You can restore items from Trash in WorkDrive.</div>
+          <div class="confirm-actions">
+            <button class="btn" type="button" data-cancel>Cancel</button>
+            <button class="btn danger" type="button" data-confirm>Move to trash</button>
+          </div>
+        </div>
+      </div>`;
+
+    const done = (result) => {
+      document.removeEventListener("keydown", onKey);
+      container.innerHTML = "";
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") done(false);
+    };
+
+    document.addEventListener("keydown", onKey);
+    container.querySelector("[data-cancel]").addEventListener("click", () => done(false));
+    container.querySelector("[data-confirm]").addEventListener("click", () => done(true));
+    // Clicking the backdrop cancels; clicking the dialog itself must not.
+    container.querySelector(".confirm-backdrop").addEventListener("click", (e) => {
+      if (e.target.classList.contains("confirm-backdrop")) done(false);
+    });
+    // Focus Cancel, not the destructive button.
+    container.querySelector("[data-cancel]").focus();
+  });
 }
 
 export { ICONS, wdFileUrl };

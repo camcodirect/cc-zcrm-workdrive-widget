@@ -57,10 +57,12 @@ string standalone.upload_file_to_workdrive(string folderIdStr, string fileNameSt
 		}
 		//
 		// REBUILD THE BINARY FROM BASE64.
-		// base64Decode RETURNS A STRING; zoho.workdrive.uploadFile WANTS A FILE
+		// base64Decode IS A STRING METHOD, NOT A GLOBAL FUNCTION - CALLING IT AS
+		// base64Decode(str) FAILS TO SAVE WITH "Not able to find 'base64Decode'
+		// function". IT RETURNS A STRING; zoho.workdrive.uploadFile WANTS A FILE
 		// OBJECT, AND toFile IS WHAT BRIDGES THE TWO.
 		//
-		fileObj = base64Decode(fileContentStr).toFile(fileNameStr);
+		fileObj = fileContentStr.base64Decode().toFile(fileNameStr);
 		//
 		// THE DOCS ARE EXPLICIT THAT THE NAME MUST BE URL ENCODED UTF-8.
 		// SKIPPING THIS MANGLES ACCENTS AND RTL NAMES - SEE JOB-1006.

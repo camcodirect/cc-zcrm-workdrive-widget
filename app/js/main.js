@@ -9,7 +9,7 @@
 
 import { DEFAULT_MODULE, wdFolderUrl } from "./config.js";
 import { getRecordFolder, normalizeEntityId } from "./api/crm.js";
-import { listFolder, createFolder, uploadFile } from "./api/workdrive.js";
+import { listFolder, createFolder, uploadFile, trashItems } from "./api/workdrive.js";
 import { friendlyMessage } from "./api/_shared.js";
 import * as render from "./ui/render.js";
 import { initDropzone, initFilePicker } from "./ui/dropzone.js";
@@ -20,6 +20,8 @@ const state = {
   rootUrl: null, // the URL stored on the record, for "Open in WorkDrive"
   trail: [], // [{ id, name }] — root first, current folder last
   busy: false,
+  items: [], // what's currently listed, so selection can resolve id -> name
+  selected: new Set(), // ids ticked in the current folder
 };
 
 const currentFolder = () => state.trail[state.trail.length - 1] || null;
@@ -27,6 +29,9 @@ const currentFolder = () => state.trail[state.trail.length - 1] || null;
 function cacheElements() {
   el.crumbs = document.getElementById("crumbs");
   el.btnOpenWd = document.getElementById("btn-open-wd");
+  el.btnDelete = document.getElementById("btn-delete");
+  el.btnDeleteLabel = document.getElementById("btn-delete-label");
+  el.modal = document.getElementById("modal");
   el.list = document.getElementById("list");
   el.banner = document.getElementById("banner");
   el.uploads = document.getElementById("uploads");
@@ -41,12 +46,15 @@ function setBusy(busy) {
   state.busy = busy;
   el.btnNewFolder.disabled = busy;
   el.btnUpload.disabled = busy;
+  el.btnDelete.disabled = busy;
 }
 
 function showActions(visible) {
   el.btnNewFolder.hidden = !visible;
   el.btnUpload.hidden = !visible;
   el.btnOpenWd.hidden = !visible;
+  // Delete stays hidden regardless — it appears only when something is ticked.
+  if (!visible) el.btnDelete.hidden = true;
 }
 
 /**
@@ -63,6 +71,63 @@ function updateOpenLink() {
 }
 
 // ---------------------------------------------------------------------------
+// Selection
+// ---------------------------------------------------------------------------
+
+/** The Delete button only exists while something is ticked. */
+function updateSelectionUi() {
+  const n = state.selected.size;
+  el.btnDelete.hidden = n === 0;
+  el.btnDeleteLabel.textContent = n > 1 ? `Delete (${n})` : "Delete";
+  el.btnDelete.disabled = state.busy;
+}
+
+function clearSelection() {
+  state.selected.clear();
+  updateSelectionUi();
+}
+
+function onSelectToggle(checkbox) {
+  const id = checkbox.dataset.select;
+  if (checkbox.checked) state.selected.add(id);
+  else state.selected.delete(id);
+  checkbox.closest(".row").classList.toggle("selected", checkbox.checked);
+  updateSelectionUi();
+}
+
+// ---------------------------------------------------------------------------
+// Delete (trash)
+// ---------------------------------------------------------------------------
+
+async function onDelete() {
+  if (!state.selected.size || state.busy) return;
+
+  // Resolve ids to the actual items so the dialog can name them. Anything no
+  // longer in the list (a stale tick after a refresh) is dropped rather than
+  // sent blind — never trash an id we can't describe.
+  const chosen = state.items.filter((it) => state.selected.has(it.id));
+  if (!chosen.length) {
+    clearSelection();
+    return;
+  }
+
+  const confirmed = await render.confirmTrash(el.modal, chosen);
+  if (!confirmed) return;
+
+  setBusy(true);
+  const res = await trashItems(chosen.map((it) => it.id));
+  setBusy(false);
+
+  if (!res.ok) {
+    render.renderBanner(el.banner, friendlyMessage(res.reason, res.message));
+    return;
+  }
+
+  clearSelection();
+  refresh();
+}
+
+// ---------------------------------------------------------------------------
 // Browsing
 // ---------------------------------------------------------------------------
 
@@ -71,6 +136,9 @@ async function openFolder(folderId, name, { push = true } = {}) {
   render.renderCrumbs(el.crumbs, state.trail);
   updateOpenLink();
   render.clear(el.banner); // don't carry a stale warning into a new folder
+  // Ticks refer to items in the folder being left, so they must not survive.
+  state.items = [];
+  clearSelection();
   render.renderLoading(el.list);
   setBusy(true);
 
@@ -93,6 +161,7 @@ async function openFolder(folderId, name, { push = true } = {}) {
     return;
   }
 
+  state.items = res.items;
   render.renderList(el.list, res.items);
 
   // Never show a partial listing as if it were complete — that's the whole
@@ -273,16 +342,29 @@ async function start(data) {
 }
 
 function wireEvents() {
+  el.list.addEventListener("change", (e) => {
+    if (e.target.matches("[data-select]")) onSelectToggle(e.target);
+  });
+
   el.list.addEventListener("click", (e) => {
-    const row = e.target.closest(".row");
+    // The checkbox and its label handle themselves; only the name area opens.
+    if (e.target.closest(".row-check")) return;
+    const opener = e.target.closest(".row-open");
+    if (!opener) return;
+    const row = opener.closest(".row");
     if (row) onRowActivate(row);
   });
 
   el.list.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const row = e.target.closest(".row");
-    if (row) { e.preventDefault(); onRowActivate(row); }
+    const opener = e.target.closest(".row-open");
+    if (!opener) return;
+    e.preventDefault();
+    const row = opener.closest(".row");
+    if (row) onRowActivate(row);
   });
+
+  el.btnDelete.addEventListener("click", onDelete);
 
   el.crumbs.addEventListener("click", (e) => {
     const crumb = e.target.closest(".crumb");

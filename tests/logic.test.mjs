@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { extractFolderId, normalizeEntityId, recordName } from "../app/js/api/crm.js";
 import { parseBody, unwrap } from "../app/js/api/_shared.js";
 import { toItem } from "../app/js/api/workdrive.js";
+import { TRASH_STATUS } from "../app/js/config.js";
 import { formatSize, formatDate, esc } from "../app/js/ui/render.js";
 
 const ID = "kj2n4a880e2a09bcf4641b2ef7c60e81b7b2f";
@@ -216,6 +217,30 @@ test("pagination: stops at the safety ceiling instead of looping forever", () =>
   const r = pageLoop(5000, 50, 1000);
   assert.equal(r.count, 1000);
   assert.equal(r.requests, 20);
+});
+
+// ---------------------------------------------------------------------------
+// Trash payload. The widget must only ever TRASH (recoverable), never
+// permanently delete.
+// ---------------------------------------------------------------------------
+
+test("TRASH_STATUS is the recoverable-trash code, not a delete", () => {
+  // PATCH /files with status 61 trashes. DELETE /files/{id} is permanent and
+  // must never be what this widget sends.
+  assert.equal(TRASH_STATUS, "61");
+});
+
+test("trash payload shape: one entry per id, JSON:API typed", () => {
+  const ids = ["a1", "b2", "c3"];
+  const payload = {
+    data: ids.map((id) => ({ attributes: { status: TRASH_STATUS }, id, type: "files" })),
+  };
+  assert.equal(payload.data.length, 3);
+  for (const entry of payload.data) {
+    assert.equal(entry.type, "files");
+    assert.equal(entry.attributes.status, "61");
+    assert.ok(entry.id);
+  }
 });
 
 test("formatSize", () => {

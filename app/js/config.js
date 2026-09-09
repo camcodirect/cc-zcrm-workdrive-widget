@@ -66,6 +66,11 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 // WorkDrive resource_type codes.
 export const FOLDER_TYPE = 1001;
 
+// PATCH /files with attributes.status = "61" moves items to WorkDrive's trash.
+// Recoverable, unlike DELETE /files/{id} which is permanent. The widget only
+// ever trashes — see trashItems().
+export const TRASH_STATUS = "61";
+
 // WorkDrive caps a listing page at 50 and gives NO indication when it
 // truncates — no meta, no cursor, no total. See listFolder() for why that
 // matters and how it's handled.

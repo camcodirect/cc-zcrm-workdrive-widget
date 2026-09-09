@@ -15,6 +15,7 @@ import {
   MAX_UPLOAD_BYTES,
   PAGE_SIZE,
   MAX_LIST_ITEMS,
+  TRASH_STATUS,
 } from "../config.js";
 import { invoke, parseBody, DEBUG } from "./_shared.js";
 
@@ -121,6 +122,45 @@ export async function getFolderMeta(folderId) {
   if (!res.ok) return res;
   const a = (res.body && res.body.data && res.body.data.attributes) || {};
   return { ...res, name: a.name || "", parentId: a.parent_id || null };
+}
+
+/**
+ * Move files/folders to WorkDrive's trash.
+ *
+ * Deliberately TRASH, not permanent delete. WorkDrive offers both:
+ *   PATCH  /files          attributes.status "61"  -> trash, recoverable
+ *   DELETE /files/{id}                             -> gone for good
+ *
+ * A CRM sidebar is the wrong place to offer irreversible destruction of
+ * someone's job documents, and WorkDrive's own UI trashes by default. Anything
+ * removed here can be restored from WorkDrive's Trash.
+ *
+ * PATCH takes an array, so a multi-select is one call rather than N.
+ *
+ * @param {string[]} ids
+ */
+export async function trashItems(ids) {
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) return { ok: false, reason: "UNKNOWN", message: "Nothing selected." };
+
+  const res = await invoke({
+    url: `${WD_API}/files`,
+    method: "PATCH",
+    param_type: 2,
+    headers: JSONAPI_HEADERS,
+    parameters: {
+      data: list.map((id) => ({
+        attributes: { status: TRASH_STATUS },
+        id,
+        type: "files",
+      })),
+    },
+  });
+
+  // A successful trash returns 204 with no body, so the generic "does it have
+  // a data key" success test doesn't apply. Treat any 2xx as done.
+  if (res.status >= 200 && res.status < 300) return { ...res, ok: true, count: list.length };
+  return res;
 }
 
 export async function createFolder(parentId, name) {
