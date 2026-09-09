@@ -28,6 +28,18 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The browser's default `[hidden] { display: none }` is a bare-element rule,
+ * so ANY class rule that sets `display` beats it — `.btn { display: inline-flex }`
+ * did exactly that, leaving `hidden` buttons fully visible while el.hidden
+ * reported true. Nothing in the JS was wrong; the attribute was simply being
+ * overruled.
+ *
+ * This restores the invariant for every element, with !important because the
+ * whole point is that it must outrank any component's own display value.
+ */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;

@@ -16,7 +16,9 @@
       "Bash(sed -n '/function showActions/,/^}/p')",
       "Bash(curl -sS \"https://camco.dev/zoho-widgets/camco_zcrm_workdrive_widget/widget.html\")",
       "Bash(sed -n '/export function renderList/,/^}/p' app/js/ui/render.js)",
-      "Bash(sed -n '/export function toItem/,/^}/p' app/js/api/workdrive.js)"
+      "Bash(sed -n '/export function toItem/,/^}/p' app/js/api/workdrive.js)",
+      "Bash(rm -f dl-sort.png dl-hover.png search.png)",
+      "Bash(rm -rf .playwright-mcp)"
     ]
   }
 }
