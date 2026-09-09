@@ -50,6 +50,7 @@ Confirmed against the live CRM on 2026-09-09. These are expensive to rediscover.
 | List folder | GET | `/files/{id}/files` | 1 |
 | Folder metadata | GET | `/files/{id}` | 1 |
 | Create folder | POST | `/files` | 2 |
+| Trash items | PATCH | `/files` | 2 |
 | Upload file | POST | `/upload` | 2 |
 | Publish (unused) | POST | `/permissions` | 2 |
 
@@ -80,6 +81,17 @@ Captured from real responses, not docs:
 - **Upload** (`POST /upload`) returns an **array** under `data`, and renames things: the id is `attributes.resource_id` (not `resource.id`), the name is `FileName`, the link is `Permalink`. There's also a `File INFO` key holding a JSON-encoded string that needs a second parse.
 
 `toItem()` in `api/workdrive.js` normalizes all of this, with tests pinning each shape.
+
+### Delete means TRASH, deliberately
+
+WorkDrive offers two removals and the widget only ever uses the recoverable one:
+
+- `PATCH /files` with `attributes.status: "61"` → moves to Trash, restorable. **This is what `trashItems()` sends.**
+- `DELETE /files/{id}` → permanent. **Never used here.**
+
+A CRM sidebar is the wrong place to offer irreversible destruction of a client's job documents, and WorkDrive's own UI trashes by default. Don't "fix" this by switching to DELETE. The confirmation dialog names the items being removed rather than just counting them, warns when a folder is included, and focuses Cancel rather than the destructive button.
+
+There's no Deluge task for deletion (the only WorkDrive tasks are upload, create folder, create team folder), so this one goes through `CONNECTION.invoke` — which is fine, because the payload is a small JSON array of ids, not a file.
 
 ### Listing pages at 50, silently
 
