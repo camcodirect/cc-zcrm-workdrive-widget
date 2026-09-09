@@ -170,16 +170,17 @@ a.btn:hover { text-decoration: none; }
 .row.selected { background: var(--accent-soft); }
 .row.selected:hover { background: #dfeafb; }
 
+/* Each icon carries its own colours, so nothing here should set `color` —
+   see the icon set in ui/render.js. */
 .row-icon {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  color: var(--text-faint);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.row-icon.folder { color: #eab308; }
+.row-icon svg { width: 18px; height: 18px; display: block; }
 
 .row-name {
   flex: 1;

@@ -12,7 +12,7 @@ import { extractFolderId, normalizeEntityId, recordName } from "../app/js/api/cr
 import { parseBody, unwrap } from "../app/js/api/_shared.js";
 import { toItem } from "../app/js/api/workdrive.js";
 import { TRASH_STATUS } from "../app/js/config.js";
-import { formatSize, formatDate, esc } from "../app/js/ui/render.js";
+import { formatSize, formatDate, esc, iconKind, fileExtension } from "../app/js/ui/render.js";
 
 const ID = "kj2n4a880e2a09bcf4641b2ef7c60e81b7b2f";
 
@@ -241,6 +241,62 @@ test("trash payload shape: one entry per id, JSON:API typed", () => {
     assert.equal(entry.attributes.status, "61");
     assert.ok(entry.id);
   }
+});
+
+// ---------------------------------------------------------------------------
+// File-type icons
+// ---------------------------------------------------------------------------
+
+test("fileExtension: normal, uppercase, multi-dot", () => {
+  assert.equal(fileExtension("report.PDF"), "pdf");
+  assert.equal(fileExtension("archive.tar.gz"), "gz");
+  assert.equal(fileExtension("Bed+mounted+cup+holder.stl"), "stl");
+});
+
+test("fileExtension: no extension, hidden files, trailing dot", () => {
+  assert.equal(fileExtension("README"), "");
+  assert.equal(fileExtension(".gitignore"), "", "a leading dot is a hidden file, not an extension");
+  assert.equal(fileExtension("weird."), "");
+  assert.equal(fileExtension(""), "");
+  assert.equal(fileExtension(null), "");
+});
+
+test("iconKind: folders win over any extension", () => {
+  assert.equal(iconKind("Site Photos", true), "folder");
+  assert.equal(iconKind("looks.like.a.pdf", true), "folder");
+});
+
+test("iconKind: the common job-folder types", () => {
+  const cases = {
+    "Signed Contract.pdf": "pdf",
+    "Proposal.docx": "doc",
+    "scope-of-work.txt": "text",
+    "materials-list.csv": "sheet",
+    "Estimate.xlsx": "sheet",
+    "Deck.pptx": "slides",
+    "IMG_4482.jpg": "image",
+    "site.png": "image",
+    "walkthrough.mp4": "video",
+    "voicemail.m4a": "audio",
+    "photos.zip": "archive",
+    "widget.js": "code",
+    "config.json": "data",
+    "Bed+mounted+cup+holder.stl": "model",
+    "plan.dwg": "model",
+  };
+  for (const [name, expected] of Object.entries(cases)) {
+    assert.equal(iconKind(name, false), expected, `${name} should be ${expected}`);
+  }
+});
+
+test("iconKind: unknown and extensionless fall back to generic", () => {
+  assert.equal(iconKind("mystery.qqq", false), "generic");
+  assert.equal(iconKind("Makefile", false), "generic");
+});
+
+test("iconKind: case insensitive", () => {
+  assert.equal(iconKind("SCAN.JPEG", false), "image");
+  assert.equal(iconKind("Report.PDF", false), "pdf");
 });
 
 test("formatSize", () => {

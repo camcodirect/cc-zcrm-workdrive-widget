@@ -21,6 +21,173 @@ export function esc(s) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// File-type icons
+//
+// All built on the same page-with-a-folded-corner silhouette so the set reads
+// as one family; only the fill colour and the glyph inside change. Images and
+// media get a distinct shape instead, because for those the content matters
+// more than the fact that it's a file.
+// ---------------------------------------------------------------------------
+
+/** Extension -> icon kind. Anything unlisted falls back to a generic page. */
+const EXT_KIND = {
+  // documents
+  doc: "doc", docx: "doc", odt: "doc", rtf: "doc", pages: "doc",
+  txt: "text", md: "text", log: "text", rtfd: "text",
+  pdf: "pdf",
+  // spreadsheets
+  xls: "sheet", xlsx: "sheet", csv: "sheet", tsv: "sheet", ods: "sheet", numbers: "sheet",
+  // presentations
+  ppt: "slides", pptx: "slides", odp: "slides", key: "slides",
+  // images
+  jpg: "image", jpeg: "image", png: "image", gif: "image", bmp: "image",
+  webp: "image", heic: "image", heif: "image", tif: "image", tiff: "image",
+  svg: "image", ico: "image", avif: "image",
+  // video / audio
+  mp4: "video", mov: "video", avi: "video", mkv: "video", webm: "video", wmv: "video", m4v: "video",
+  mp3: "audio", wav: "audio", m4a: "audio", aac: "audio", flac: "audio", ogg: "audio",
+  // archives
+  zip: "archive", rar: "archive", "7z": "archive", tar: "archive", gz: "archive", bz2: "archive",
+  // code / data
+  js: "code", mjs: "code", ts: "code", jsx: "code", tsx: "code", html: "code", htm: "code",
+  css: "code", py: "code", java: "code", rb: "code", php: "code", go: "code", rs: "code",
+  c: "code", cpp: "code", h: "code", sh: "code", dg: "code",
+  json: "data", xml: "data", yml: "data", yaml: "data", sql: "data",
+  // cad / 3d — common in job folders
+  stl: "model", obj: "model", "3mf": "model", step: "model", stp: "model",
+  dwg: "model", dxf: "model", skp: "model", f3d: "model",
+};
+
+/** The page silhouette every document-ish icon shares. */
+const PAGE = 'M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z';
+const FOLD = 'M13 2v7h7';
+
+/** A page icon with a short type label across the middle. */
+function pageIcon(color, label) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="${PAGE}" fill="${color}" opacity=".14"/>
+    <path d="${PAGE}" fill="none" stroke="${color}" stroke-width="1.6"
+          stroke-linejoin="round"/>
+    <path d="${FOLD}" fill="none" stroke="${color}" stroke-width="1.6"
+          stroke-linejoin="round"/>
+    <text x="12" y="17.6" text-anchor="middle" font-size="6.2"
+          font-family="system-ui, -apple-system, sans-serif" font-weight="700"
+          fill="${color}" letter-spacing="-.2">${label}</text>
+  </svg>`;
+}
+
+/** A page icon with lines on it, for plain text. */
+function linedPageIcon(color) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="${PAGE}" fill="${color}" opacity=".12"/>
+    <path d="${PAGE}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="${FOLD}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M8 13h8M8 16h8M8 10h3" stroke="${color}" stroke-width="1.4" stroke-linecap="round"/>
+  </svg>`;
+}
+
+const TYPE_COLORS = {
+  doc: "#2b6cb0",
+  text: "#667085",
+  pdf: "#c0392b",
+  sheet: "#1a7f4b",
+  slides: "#c2410c",
+  image: "#7c3aed",
+  video: "#be185d",
+  audio: "#0e7490",
+  archive: "#a16207",
+  code: "#334155",
+  data: "#475569",
+  model: "#0f766e",
+  generic: "#98a2b3",
+};
+
+const FILE_ICONS = {
+  doc: pageIcon(TYPE_COLORS.doc, "DOC"),
+  text: linedPageIcon(TYPE_COLORS.text),
+  pdf: pageIcon(TYPE_COLORS.pdf, "PDF"),
+  sheet: pageIcon(TYPE_COLORS.sheet, "XLS"),
+  slides: pageIcon(TYPE_COLORS.slides, "PPT"),
+  code: pageIcon(TYPE_COLORS.code, "&lt;/&gt;"),
+  data: pageIcon(TYPE_COLORS.data, "{ }"),
+
+  // A framed picture with a horizon and sun — reads at 18px better than a
+  // page would, and instantly says "image".
+  image: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2" fill="${TYPE_COLORS.image}" opacity=".14"/>
+    <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="${TYPE_COLORS.image}" stroke-width="1.6"/>
+    <circle cx="8.5" cy="9.5" r="1.6" fill="${TYPE_COLORS.image}"/>
+    <path d="M4 17l4.5-4.5a1.5 1.5 0 012 0L15 17M14 14l1.8-1.8a1.5 1.5 0 012 0L20 14.5"
+          fill="none" stroke="${TYPE_COLORS.image}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`,
+
+  video: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="14" rx="2" fill="${TYPE_COLORS.video}" opacity=".14"/>
+    <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="${TYPE_COLORS.video}" stroke-width="1.6"/>
+    <path d="M10.5 9.5l4.5 2.5-4.5 2.5z" fill="${TYPE_COLORS.video}"/>
+  </svg>`,
+
+  audio: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M9 17V6l10-2v11" fill="none" stroke="${TYPE_COLORS.audio}" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="7" cy="17.5" r="2.5" fill="${TYPE_COLORS.audio}" opacity=".25"/>
+    <circle cx="7" cy="17.5" r="2.5" fill="none" stroke="${TYPE_COLORS.audio}" stroke-width="1.6"/>
+    <circle cx="17" cy="15.5" r="2.5" fill="${TYPE_COLORS.audio}" opacity=".25"/>
+    <circle cx="17" cy="15.5" r="2.5" fill="none" stroke="${TYPE_COLORS.audio}" stroke-width="1.6"/>
+  </svg>`,
+
+  archive: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="${PAGE}" fill="${TYPE_COLORS.archive}" opacity=".14"/>
+    <path d="${PAGE}" fill="none" stroke="${TYPE_COLORS.archive}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="${FOLD}" fill="none" stroke="${TYPE_COLORS.archive}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M9 5h2M9 8h2M9 11h2M9 14h2" stroke="${TYPE_COLORS.archive}" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>`,
+
+  // A cube, for CAD and 3D files — common enough in job folders to deserve one.
+  model: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2.8l8 4.4v9.6l-8 4.4-8-4.4V7.2z" fill="${TYPE_COLORS.model}" opacity=".14"/>
+    <path d="M12 2.8l8 4.4v9.6l-8 4.4-8-4.4V7.2z" fill="none" stroke="${TYPE_COLORS.model}"
+          stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M4 7.2l8 4.4 8-4.4M12 11.6V21" fill="none" stroke="${TYPE_COLORS.model}"
+          stroke-width="1.5" stroke-linejoin="round"/>
+  </svg>`,
+
+  generic: `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="${PAGE}" fill="${TYPE_COLORS.generic}" opacity=".16"/>
+    <path d="${PAGE}" fill="none" stroke="${TYPE_COLORS.generic}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="${FOLD}" fill="none" stroke="${TYPE_COLORS.generic}" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>`,
+};
+
+/** Filled folder, so it stands apart from every file icon at a glance. */
+const FOLDER_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M3 6.5A1.5 1.5 0 014.5 5h4.6a1.5 1.5 0 011.06.44L11.5 6.5h8A1.5 1.5 0 0121 8v10a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18z"
+        fill="#eab308" opacity=".22"/>
+  <path d="M3 6.5A1.5 1.5 0 014.5 5h4.6a1.5 1.5 0 011.06.44L11.5 6.5h8A1.5 1.5 0 0121 8v10a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 18z"
+        fill="none" stroke="#ca8a04" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M3 9.5h18" stroke="#ca8a04" stroke-width="1.4"/>
+</svg>`;
+
+/** Lowercased extension, or "" when there isn't one. */
+export function fileExtension(name) {
+  const clean = String(name || "").trim();
+  const dot = clean.lastIndexOf(".");
+  // A leading dot means a hidden file (".gitignore"), not an extension.
+  if (dot <= 0 || dot === clean.length - 1) return "";
+  return clean.slice(dot + 1).toLowerCase();
+}
+
+/** Which icon a name maps to. Exported so it can be tested directly. */
+export function iconKind(name, isFolder) {
+  if (isFolder) return "folder";
+  return EXT_KIND[fileExtension(name)] || "generic";
+}
+
+function iconFor(name, isFolder) {
+  if (isFolder) return FOLDER_ICON;
+  return FILE_ICONS[iconKind(name, false)] || FILE_ICONS.generic;
+}
+
 export function formatSize(bytes) {
   if (!bytes) return "";
   const units = ["B", "KB", "MB", "GB"];
@@ -81,7 +248,7 @@ export function renderList(container, items) {
           <input type="checkbox" data-select="${esc(it.id)}" aria-label="Select ${esc(it.name)}">
         </label>
         <span class="row-open" role="button" tabindex="0" title="${esc(it.name)}">
-          <span class="row-icon ${it.isFolder ? "folder" : ""}">${it.isFolder ? ICONS.folder : ICONS.file}</span>
+          <span class="row-icon ${it.isFolder ? "folder" : ""}">${iconFor(it.name, it.isFolder)}</span>
           <span class="row-name">${esc(it.name)}</span>
         </span>
         <span class="row-meta row-size">${it.isFolder ? "" : esc(formatSize(it.size))}</span>
